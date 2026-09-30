@@ -20,11 +20,13 @@ import {
   LoaderCircle,
   LucideIcon,
   Menu,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
   Sparkles,
   Target,
+  Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
@@ -37,7 +39,7 @@ import {
 import type { Task, TaskOptions, TasksResponse } from "@/lib/types";
 
 type LoadState = "loading" | "ready" | "error";
-type CreateTaskResponse = { ok: boolean; task?: Task; error?: string };
+type TaskMutationResponse = { ok: boolean; task?: Task; error?: string };
 
 const isoToday = () => {
   const date = new Date();
@@ -131,14 +133,16 @@ function MetricCard({
   );
 }
 
-function CreateTaskDialog({
+function TaskDialog({
   options,
+  task,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   options: TaskOptions;
+  task: Task | null;
   onClose: () => void;
-  onCreated: (task: Task) => void;
+  onSaved: (task: Task) => void;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -161,16 +165,16 @@ function CreateTaskDialog({
     const body = Object.fromEntries(form.entries());
 
     try {
-      const response = await fetch("/api/tasks", {
-        method: "POST",
+      const response = await fetch(task ? `/api/tasks/${encodeURIComponent(task.id)}` : "/api/tasks", {
+        method: task ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const result = await response.json() as CreateTaskResponse;
+      const result = await response.json() as TaskMutationResponse;
       if (!response.ok || !result.ok || !result.task) {
         throw new Error(result.error ?? "Could not create the planner item.");
       }
-      onCreated(result.task);
+      onSaved(result.task);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Could not create the planner item.");
     } finally {
@@ -178,14 +182,17 @@ function CreateTaskDialog({
     }
   }
 
-  function choiceField(name: string, label: string, values: string[], preferred?: string, required = false) {
-    const selected = values.includes(preferred ?? "") ? preferred : values[0];
+  function choiceField(name: string, label: string, values: string[], preferred?: string, required = false, emptyLabel = "None") {
+    const taskValue = task ? task[name as keyof Task] : undefined;
+    const selected = task
+      ? typeof taskValue === "string" && values.includes(taskValue) ? taskValue : ""
+      : values.includes(preferred ?? "") ? preferred : values[0];
     return (
       <label className="create-field" key={name}>
         <span>{label}{required && <i> *</i>}</span>
         <select name={name} defaultValue={selected ?? ""} required={required && values.length > 0} disabled={values.length === 0}>
           {values.length === 0 && <option value="">No options available</option>}
-          {!required && <option value="">None</option>}
+          {!required && <option value="">{emptyLabel}</option>}
           {values.map((value) => <option value={value} key={value}>{value}</option>)}
         </select>
       </label>
@@ -196,31 +203,31 @@ function CreateTaskDialog({
     <dialog ref={dialogRef} className="create-dialog" onCancel={onClose} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <form className="create-form" onSubmit={submitTask}>
         <div className="create-dialog-heading">
-          <div><span className="create-dialog-icon"><Plus size={17} /></span><div><h2>New planner item</h2><p>Add it directly to your Notion database.</p></div></div>
+          <div><span className="create-dialog-icon">{task ? <Pencil size={16} /> : <Plus size={17} />}</span><div><h2>{task ? "Edit planner item" : "New planner item"}</h2><p>{task ? "Update this item in your Notion database." : "Add it directly to your Notion database."}</p></div></div>
           <button type="button" className="create-dialog-close" onClick={onClose} aria-label="Close dialog">×</button>
         </div>
         <label className="create-field create-title-field">
           <span>Title <i>*</i></span>
-          <input name="title" maxLength={2000} placeholder="What do you need to get done?" required autoFocus />
+          <input name="title" defaultValue={task?.title ?? ""} maxLength={2000} placeholder="What do you need to get done?" required autoFocus />
         </label>
         <div className="create-fields-grid">
           {choiceField("type", "Type", options.types, "Deliverable", true)}
           {choiceField("status", "Status", options.statuses, "Planned", true)}
-          {choiceField("priority", "Priority", options.priorities)}
+          {choiceField("priority", "Priority", options.priorities, "Medium", false, "Use default")}
           {choiceField("area", "Area", options.areas)}
           {choiceField("course", "Course", options.courses)}
-          <label className="create-field"><span>Due date</span><input name="dueDate" type="date" /></label>
+          <label className="create-field"><span>Due date</span><input name="dueDate" type="date" defaultValue={task?.dueDate?.slice(0, 10) ?? ""} /></label>
         </div>
         <label className="create-field next-action-field">
           <span>Next action</span>
-          <textarea name="nextAction" maxLength={2000} rows={2} placeholder="What is the next concrete step?" />
+          <textarea name="nextAction" defaultValue={task?.nextAction ?? ""} maxLength={2000} rows={2} placeholder="What is the next concrete step?" />
         </label>
         {!hasChoices && <p className="create-form-notice">Type and Status options could not be loaded. Check that these properties exist in your Notion database.</p>}
         {error && <p className="create-form-error" role="alert">{error}</p>}
         <div className="create-dialog-actions">
           <button type="button" className="create-cancel" onClick={onClose} disabled={saving}>Cancel</button>
           <button type="submit" className="create-submit" disabled={saving || !hasChoices}>
-            {saving ? <><LoaderCircle size={14} className="spin" /> Creating...</> : <><Plus size={14} /> Create item</>}
+            {saving ? <><LoaderCircle size={14} className="spin" /> Saving...</> : task ? <><Pencil size={14} /> Save changes</> : <><Plus size={14} /> Create item</>}
           </button>
         </div>
       </form>
@@ -290,13 +297,16 @@ function CalendarCard({ tasks }: { tasks: Task[] }) {
   );
 }
 
-function TaskTable({ tasks, loading, search, onSearch, onCreate, createDisabled }: {
+function TaskTable({ tasks, loading, search, onSearch, onCreate, onEdit, onDelete, createDisabled, deleting }: {
   tasks: Task[];
   loading: boolean;
   search: string;
   onSearch: (value: string) => void;
   onCreate: () => void;
+  onEdit: (task: Task) => void;
+  onDelete: (task: Task) => void;
   createDisabled: boolean;
+  deleting: boolean;
 }) {
   const today = isoToday();
   const filtered = tasks.filter((task) => `${task.title} ${task.type} ${task.area} ${task.course} ${task.status} ${task.priority}`.toLowerCase().includes(search.toLowerCase()));
@@ -312,7 +322,7 @@ function TaskTable({ tasks, loading, search, onSearch, onCreate, createDisabled 
       </div>
       <div className="task-table-scroll">
         <table className="task-table">
-          <thead><tr><th>Task</th><th>Type</th><th>Area</th><th>Priority</th><th>Status</th><th>Next action</th><th>Due date</th></tr></thead>
+          <thead><tr><th>Task</th><th>Type</th><th>Area</th><th>Priority</th><th>Status</th><th>Next action</th><th>Due date</th><th>Actions</th></tr></thead>
           <tbody>
             {rows.map((task) => (
               <tr key={task.id}>
@@ -323,6 +333,12 @@ function TaskTable({ tasks, loading, search, onSearch, onCreate, createDisabled 
                 <td><span className={`pill status-pill ${task.completed ? "completed" : task.status.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{task.completed ? "Completed" : task.status}</span></td>
                 <td className="next-action" title={task.nextAction || undefined}>{task.nextAction || "—"}</td>
                 <td className={`due-date${isOverdue(task, today) ? " overdue" : ""}`}>{task.dueDate ? <>{isOverdue(task, today) && <CircleAlert size={12} />}{formatDate(task.dueDate)}</> : "—"}</td>
+                <td><div className="task-row-actions">
+                  <button type="button" aria-label={`Edit ${task.title}`} title="Edit task" onClick={() => onEdit(task)} disabled={deleting}><Pencil size={13} /></button>
+                  <button type="button" className="delete-task" aria-label={`Delete ${task.title}`} title="Archive task" onClick={() => onDelete(task)} disabled={deleting}>
+                    {deleting ? <LoaderCircle size={13} className="spin" /> : <Trash2 size={13} />}
+                  </button>
+                </div></td>
               </tr>
             ))}
           </tbody>
@@ -347,6 +363,9 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [taskOptions, setTaskOptions] = useState<TaskOptions | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [deletingTaskId, setDeletingTaskId] = useState("");
+  const [actionError, setActionError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
   const loadTasks = useCallback(async () => {
@@ -371,11 +390,32 @@ export default function DashboardPage() {
     if (isLoaded && hasAccess) void loadTasks();
   }, [hasAccess, isLoaded, loadTasks]);
 
-  function handleTaskCreated(task: Task) {
-    setTasks((current) => [task, ...current]);
+  function handleTaskSaved(task: Task) {
+    setTasks((current) => editingTask
+      ? current.map((currentTask) => currentTask.id === task.id ? task : currentTask)
+      : [task, ...current]);
     setCreateDialogOpen(false);
+    setEditingTask(null);
     setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date()));
-    setSuccessMessage(`“${task.title}” was added to your Notion planner.`);
+    setSuccessMessage(editingTask ? `“${task.title}” was updated.` : `“${task.title}” was added to your Notion planner.`);
+  }
+
+  async function handleTaskDelete(task: Task) {
+    if (!window.confirm(`Archive “${task.title}” from your Notion planner? This can be restored from Notion’s trash.`)) return;
+    setDeletingTaskId(task.id);
+    setActionError("");
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "DELETE" });
+      const result = await response.json() as { ok: boolean; error?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error ?? "Could not archive the planner item.");
+      setTasks((current) => current.filter((item) => item.id !== task.id));
+      setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date()));
+      setSuccessMessage(`“${task.title}” was archived from your planner.`);
+    } catch (deleteError) {
+      setActionError(deleteError instanceof Error ? deleteError.message : "Could not archive the planner item.");
+    } finally {
+      setDeletingTaskId("");
+    }
   }
 
   const today = isoToday();
@@ -440,6 +480,7 @@ export default function DashboardPage() {
           {state === "error" && <div className="connection-banner"><span className="banner-icon"><AlertTriangle size={16} /></span><div><strong>We couldn’t load your Notion tasks</strong><p>{error}</p></div><button onClick={() => void loadTasks()}>Try again</button></div>}
           {state === "loading" && tasks.length === 0 && <div className="loading-banner"><LoaderCircle size={15} className="spin" /> Connecting securely to your Notion database...</div>}
           {successMessage && <div className="success-banner" role="status"><Check size={15} /><span>{successMessage}</span><button onClick={() => setSuccessMessage("")} aria-label="Dismiss">×</button></div>}
+          {actionError && <div className="connection-banner" role="alert"><span className="banner-icon"><AlertTriangle size={16} /></span><div><strong>Could not update the planner</strong><p>{actionError}</p></div><button onClick={() => setActionError("")}>Dismiss</button></div>}
 
           <section className="metrics-grid" aria-label="Task overview">
             <MetricCard label="Total tasks" value={state === "loading" && tasks.length === 0 ? "—" : tasks.length} note="Across your planner" icon={ListChecks} tone="tone-green" />
@@ -475,12 +516,17 @@ export default function DashboardPage() {
             </section>
           </div>
 
-          <TaskTable tasks={tasks} loading={state === "loading"} search={search} onSearch={setSearch} onCreate={() => setCreateDialogOpen(true)} createDisabled={state !== "ready" || !taskOptions} />
+          <TaskTable tasks={tasks} loading={state === "loading"} search={search} onSearch={setSearch}
+            onCreate={() => { setEditingTask(null); setCreateDialogOpen(true); }}
+            onEdit={(task) => { setCreateDialogOpen(false); setEditingTask(task); }}
+            onDelete={(task) => void handleTaskDelete(task)}
+            createDisabled={state !== "ready" || !taskOptions} deleting={Boolean(deletingTaskId)} />
 
           <footer className="page-footer"><span>Made for a more focused day</span><span><i /> Connected securely to your Notion database <span className="footer-separator">·</span> {tasks.length} planner items</span></footer>
         </div>
       </main>
-      {createDialogOpen && taskOptions && <CreateTaskDialog options={taskOptions} onClose={() => setCreateDialogOpen(false)} onCreated={handleTaskCreated} />}
+      {(createDialogOpen || editingTask) && taskOptions && <TaskDialog key={editingTask?.id ?? "new"} options={taskOptions} task={editingTask}
+        onClose={() => { setCreateDialogOpen(false); setEditingTask(null); }} onSaved={handleTaskSaved} />}
     </div>
   );
 }

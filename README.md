@@ -3,7 +3,7 @@
 A personal dashboard built with **Next.js and React**. Your existing Notion
 database is the source of truth: the dashboard reads tasks from Notion, turns
 them into charts, progress indicators, and a deadline calendar, and lets you
-create new planner items in the same database.
+create, edit, and archive planner items in the same database.
 
 This guide explains how the application works, what each part is for, and how
 to run, extend, and deploy it.
@@ -31,11 +31,9 @@ creating a Notion item. The `/api/tasks` endpoint then reads the Notion
 credentials from server environment variables, contacts the Notion API, and
 returns task data to the browser.
 
-When you create a planner item, the browser sends its form values to
-`POST /api/tasks`. The same server checks the input, checks it against the
-Notion database schema, and asks Notion to create a page in your existing
-database. The created task is returned to the browser and immediately added to
-the visible dashboard.
+When you create, edit, or archive a planner item, the browser calls this app's
+API. The server checks the Clerk session and verified-email allowlist, validates
+the input against the Notion database schema, and then makes the Notion change.
 
 ```text
 Your browser (React dashboard + Clerk sign-in)
@@ -45,7 +43,9 @@ Your browser (React dashboard + Clerk sign-in)
 Next.js middleware + API access check (allowlisted verified email)
         │
         │ GET /api/tasks            load tasks and database options
-        │ POST /api/tasks           create one planner item
+        │ POST /api/tasks           create a planner item
+        │ PATCH /api/tasks/:id      edit a planner item
+        │ DELETE /api/tasks/:id     archive a planner item
         ▼
 Next.js server (API routes + Notion mapping)
         │
@@ -64,11 +64,11 @@ the browser bundle or API response.
 | --- | --- |
 | **Next.js App Router** | Provides the website, page layout, server-side API routes, middleware, and production build. |
 | **Clerk** | Handles sign-in and sessions; a server-verified email allowlist authorizes planner access. |
-| **React** | Builds the interactive dashboard, calendar, task table, and create-item form from reusable components. |
+| **React** | Builds the interactive dashboard, calendar, task table, and planner-item forms/actions from reusable components. |
 | **TypeScript** | Gives task data and API request/response objects explicit types so mismatched fields can be caught during a build. |
 | **Recharts** | Draws the status, priority, task type, and timeline charts. |
 | **Lucide React** | Supplies consistent icons for navigation, metrics, actions, and states. |
-| **Notion REST API** | Stores the real planner data and creates new pages in your database. This project calls it with the server's built-in `fetch`; it does not need the Notion SDK. |
+| **Notion REST API** | Stores the real planner data and creates, updates, or archives pages in your database. This project calls it with the server's built-in `fetch`; it does not need the Notion SDK. |
 | **CSS** | Styles the responsive layout, charts, calendar, form, and phone/tablet views. |
 | **Vercel** | Can host the Next.js app and supply production environment variables. |
 
@@ -131,8 +131,10 @@ different.
 
 The **New item** button opens a form. Type, Status, Priority, Area, and Course
 choices are fetched from your actual database schema; they are not hard-coded.
-Title, Type, and Status are required. Priority, Area, Course, due date, and
-Next action are optional.
+If a required choice isn't provided, creation defaults to `Deliverable` (or
+`Task`, then the first Type option), `Planned` (or `Not started`, then the first
+Status option), and `Medium` (or `Normal`, `Low`, then the first Priority
+option). Optional Area, Course, due date, and Next action stay empty unless set.
 
 When the form is submitted:
 
@@ -146,8 +148,11 @@ When the form is submitted:
 5. The returned Notion page is mapped to a `Task`; React adds it to the table
    and recalculates the dashboard.
 
-This creates a **new** page only; the dashboard does not currently update or
-delete existing Notion tasks.
+The table's **Edit** action opens the form with current values; saving calls
+`PATCH /api/tasks/:id`, and blank optional fields clear their Notion values.
+**Delete** asks for confirmation and calls `DELETE /api/tasks/:id`, which
+archives the page in Notion rather than permanently deleting it. Archived items
+can be restored from Notion's trash.
 
 ## Understanding the dashboard calculations
 
@@ -207,7 +212,8 @@ notion-dashboard/
   browser interactions and React state. The dashboard page and chart components
   are client components.
 - An **API route** is a server-side URL implemented by a `route.ts` file.
-  `app/api/tasks/route.ts` handles both `GET` and `POST` requests.
+  `app/api/tasks/route.ts` handles `GET` and `POST`; `app/api/tasks/[id]/route.ts`
+  handles item updates and archives.
 - An **environment variable** is configuration supplied to the server at
   runtime. `NOTION_API_KEY` is secret; do not prefix it with `NEXT_PUBLIC_`.
 - A **Notion integration** is the authenticated connection the app uses. It
@@ -257,6 +263,7 @@ Useful project commands:
 ```bash
 npm run dev    # Start the development server
 npm run lint   # Check code with ESLint
+npm test       # Test Notion task defaults and CRUD payloads
 npm run build  # Type-check and build the production app
 npm run start  # Serve a completed production build
 ```
@@ -267,8 +274,9 @@ npm run start  # Serve a completed production build
    `.env.local`.
 2. In Notion, share your existing **Academic & Life Planner** database with
    that integration.
-3. Give the integration **Read content** and **Insert content** access. Read
-   access loads tasks; insert access is needed by **New item**.
+3. Give the integration **Read content**, **Insert content**, and **Update
+   content** access. Read access loads tasks; insert creates items; update
+   enables editing and archiving.
 4. Copy the database ID into `NOTION_DATABASE_ID`. It is part of the database
    URL. Do not use the integration token as the database ID.
 5. If you renamed a property, add the corresponding override shown in

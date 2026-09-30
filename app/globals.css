@@ -210,6 +210,11 @@ button { color: inherit; }
 .task-title-cell a svg { flex: 0 0 auto; color: #acada7; opacity: 0; }
 .task-title-cell a:hover { color: #536a4c; }
 .task-title-cell a:hover svg { opacity: 1; }
+.task-row-actions { display: flex; align-items: center; gap: 4px; }
+.task-row-actions button { display: grid; width: 27px; height: 27px; place-items: center; border: 1px solid #e8e9e4; border-radius: 6px; background: #fff; color: #777970; cursor: pointer; }
+.task-row-actions button:hover:not(:disabled) { border-color: #9ba991; color: #4d6148; }
+.task-row-actions button.delete-task:hover:not(:disabled) { border-color: #e4b6ae; color: #b75d50; }
+.task-row-actions button:disabled { cursor: not-allowed; opacity: .5; }
 .task-subtitle { display: block; overflow: hidden; margin: 3px 0 0 22px; color: #a1a29c; font-size: 8px; text-overflow: ellipsis; }
 .pill { display: inline-block; max-width: 115px; overflow: hidden; padding: 3px 6px; border-radius: 4px; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .type-pill { background: #edf2f4; color: #667e84; }
@@ -350,7 +355,7 @@ button { color: inherit; }
   .status-chart-row { height: 148px; }
   .content-grid { gap: 10px; }
   .calendar-panel, .areas-panel { padding: 14px 13px; }
-  .task-table { min-width: 660px; }
+  .task-table { min-width: 710px; }
   .task-search { min-width: 125px; }
   .task-actions { gap: 5px; }
   .create-item-button { padding-inline: 7px; }

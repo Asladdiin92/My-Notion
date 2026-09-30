@@ -56,6 +56,8 @@ export type CreateTaskInput = {
   nextAction?: string;
 };
 
+export type TaskOptions = Awaited<ReturnType<typeof fetchNotionTaskOptions>>;
+
 function notionToken(): string {
   const token = process.env.NOTION_API_KEY || process.env.NOTION_TOKEN;
   if (!token) {
@@ -154,6 +156,104 @@ function addChoiceProperty(
   target[name] = kind === "status" ? { status: { name: value } } : { select: { name: value } };
 }
 
+function defaultChoice(
+  properties: Record<string, NotionPropertySchema>,
+  variable: string,
+  fallback: string,
+  preferred: string[],
+  kind: "select" | "status",
+): string | undefined {
+  const name = schemaProperty(properties, variable, fallback);
+  if (!name || properties[name]?.type !== kind) return undefined;
+  const options = kind === "status" ? properties[name]?.status?.options : properties[name]?.select?.options;
+  const available = options?.map((option) => option.name) ?? [];
+  return preferred.find((choice) => available.includes(choice)) ?? available[0];
+}
+
+function taskProperties(
+  schema: Record<string, NotionPropertySchema>,
+  input: CreateTaskInput,
+  clearEmptyOptional: boolean,
+): Record<string, unknown> {
+  const title = input.title.trim();
+  if (!title || title.length > 2000) throw new Error("Enter a title between 1 and 2,000 characters.");
+
+  const titleName = schemaProperty(schema, "NOTION_TITLE_PROPERTY", "title");
+  if (!titleName || schema[titleName]?.type !== "title") {
+    throw new Error("The Notion database needs a title property. Check NOTION_TITLE_PROPERTY.");
+  }
+  const properties: Record<string, unknown> = {
+    [titleName]: { title: [{ text: { content: title } }] },
+  };
+
+  const type = input.type?.trim() || defaultChoice(schema, "NOTION_TYPE_PROPERTY", "Type", ["Deliverable", "Task"], "select");
+  const status = input.status?.trim() || defaultChoice(schema, "NOTION_STATUS_PROPERTY", "Status", ["Planned", "Not started"], "status");
+  const priority = input.priority?.trim() || (!clearEmptyOptional
+    ? defaultChoice(schema, "NOTION_PRIORITY_PROPERTY", "Priority", ["Medium", "Normal", "Low"], "select")
+    : undefined);
+  if (!type) throw new Error("Add at least one option to the Notion Type property.");
+  if (!status) throw new Error("Add at least one option to the Notion Status property.");
+
+  addChoiceProperty(properties, schema, "NOTION_TYPE_PROPERTY", "Type", type, "select");
+  addChoiceProperty(properties, schema, "NOTION_STATUS_PROPERTY", "Status", status, "status");
+  addChoiceProperty(properties, schema, "NOTION_PRIORITY_PROPERTY", "Priority", priority, "select");
+  addChoiceProperty(properties, schema, "NOTION_AREA_PROPERTY", "Area", input.area, "select");
+  addChoiceProperty(properties, schema, "NOTION_COURSE_PROPERTY", "Course", input.course, "select");
+  addTextProperty(properties, schema, "NOTION_NEXT_ACTION_PROPERTY", "Next Action", input.nextAction);
+
+  if (clearEmptyOptional) {
+    clearChoiceProperty(properties, schema, "NOTION_PRIORITY_PROPERTY", "Priority", input.priority);
+    clearChoiceProperty(properties, schema, "NOTION_AREA_PROPERTY", "Area", input.area);
+    clearChoiceProperty(properties, schema, "NOTION_COURSE_PROPERTY", "Course", input.course);
+    clearTextProperty(properties, schema, "NOTION_NEXT_ACTION_PROPERTY", "Next Action", input.nextAction);
+  }
+
+  const dateName = schemaProperty(schema, "NOTION_DUE_DATE_PROPERTY", "Date");
+  if (input.dueDate?.trim()) {
+    validateDueDate(input.dueDate);
+    if (!dateName || schema[dateName]?.type !== "date") {
+      throw new Error(`The Notion database does not have a date property named "${process.env.NOTION_DUE_DATE_PROPERTY || "Date"}".`);
+    }
+    properties[dateName] = { date: { start: input.dueDate } };
+  } else if (clearEmptyOptional && dateName && schema[dateName]?.type === "date") {
+    properties[dateName] = { date: null };
+  }
+
+  return properties;
+}
+
+function clearChoiceProperty(
+  target: Record<string, unknown>,
+  schema: Record<string, NotionPropertySchema>,
+  variable: string,
+  fallback: string,
+  value: string | undefined,
+): void {
+  if (value?.trim()) return;
+  const name = schemaProperty(schema, variable, fallback);
+  if (name && schema[name]?.type === "select") target[name] = { select: null };
+}
+
+function clearTextProperty(
+  target: Record<string, unknown>,
+  schema: Record<string, NotionPropertySchema>,
+  variable: string,
+  fallback: string,
+  value: string | undefined,
+): void {
+  if (value?.trim()) return;
+  const name = schemaProperty(schema, variable, fallback);
+  if (name && schema[name]?.type === "rich_text") target[name] = { rich_text: [] };
+}
+
+function validateDueDate(value: string): void {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Choose a valid due date.");
+  const parsedDate = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== value) {
+    throw new Error("Choose a valid due date.");
+  }
+}
+
 function addTextProperty(
   target: Record<string, unknown>,
   properties: Record<string, NotionPropertySchema>,
@@ -170,50 +270,11 @@ function addTextProperty(
 }
 
 export async function createNotionTask(input: CreateTaskInput): Promise<Task> {
-  const title = input.title.trim();
-  if (!title || title.length > 2000) {
-    throw new Error("Enter a title between 1 and 2,000 characters.");
-  }
-  if (input.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) {
-    throw new Error("Choose a valid due date.");
-  }
-  if (input.dueDate) {
-    const parsedDate = new Date(`${input.dueDate}T00:00:00.000Z`);
-    if (Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== input.dueDate) {
-      throw new Error("Choose a valid due date.");
-    }
-  }
-  for (const [label, value] of Object.entries(input)) {
-    if (label !== "title" && value !== undefined && value.length > 2000) {
-      throw new Error(`${label} must be 2,000 characters or fewer.`);
-    }
-  }
-
   const token = notionToken();
   const databaseId = notionDatabaseId();
   const database = await fetchDatabase();
-  const titleName = schemaProperty(database.properties, "NOTION_TITLE_PROPERTY", "title");
-  if (!titleName || database.properties[titleName]?.type !== "title") {
-    throw new Error("The Notion database needs a title property. Check NOTION_TITLE_PROPERTY.");
-  }
-
-  const properties: Record<string, unknown> = {
-    [titleName]: { title: [{ text: { content: title } }] },
-  };
-  addChoiceProperty(properties, database.properties, "NOTION_TYPE_PROPERTY", "Type", input.type, "select");
-  addChoiceProperty(properties, database.properties, "NOTION_STATUS_PROPERTY", "Status", input.status, "status");
-  addChoiceProperty(properties, database.properties, "NOTION_PRIORITY_PROPERTY", "Priority", input.priority, "select");
-  addChoiceProperty(properties, database.properties, "NOTION_AREA_PROPERTY", "Area", input.area, "select");
-  addChoiceProperty(properties, database.properties, "NOTION_COURSE_PROPERTY", "Course", input.course, "select");
-  addTextProperty(properties, database.properties, "NOTION_NEXT_ACTION_PROPERTY", "Next Action", input.nextAction);
-
-  if (input.dueDate) {
-    const dateName = schemaProperty(database.properties, "NOTION_DUE_DATE_PROPERTY", "Date");
-    if (!dateName || database.properties[dateName]?.type !== "date") {
-      throw new Error(`The Notion database does not have a date property named "${process.env.NOTION_DUE_DATE_PROPERTY || "Date"}".`);
-    }
-    properties[dateName] = { date: { start: input.dueDate } };
-  }
+  validateInputLengths(input);
+  const properties = taskProperties(database.properties, input, false);
 
   const response = await fetch(`${NOTION_API}/pages`, {
     method: "POST",
@@ -225,6 +286,47 @@ export async function createNotionTask(input: CreateTaskInput): Promise<Task> {
   if (!response.ok) throw await notionError(response);
   const page = await response.json() as NotionPage;
   return toTask(page);
+}
+
+export async function updateNotionTask(pageId: string, input: CreateTaskInput): Promise<Task> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pageId)) {
+    throw new Error("Enter a valid planner item ID.");
+  }
+  validateInputLengths(input);
+  const token = notionToken();
+  const database = await fetchDatabase();
+  const properties = taskProperties(database.properties, input, true);
+  const response = await fetch(`${NOTION_API}/pages/${encodeURIComponent(pageId)}`, {
+    method: "PATCH",
+    headers: notionHeaders(token),
+    body: JSON.stringify({ properties }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw await notionError(response);
+  return toTask(await response.json() as NotionPage);
+}
+
+export async function archiveNotionTask(pageId: string): Promise<void> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pageId)) {
+    throw new Error("Enter a valid planner item ID.");
+  }
+  const response = await fetch(`${NOTION_API}/pages/${encodeURIComponent(pageId)}`, {
+    method: "PATCH",
+    headers: notionHeaders(notionToken()),
+    body: JSON.stringify({ archived: true }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw await notionError(response);
+}
+
+function validateInputLengths(input: CreateTaskInput): void {
+  for (const [label, value] of Object.entries(input)) {
+    if (value !== undefined && value.length > 2000) {
+      throw new Error(`${label} must be 2,000 characters or fewer.`);
+    }
+  }
 }
 
 function text(value: NotionValue | undefined): string {
