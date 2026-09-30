@@ -1,5 +1,6 @@
 "use client";
 
+import { useUser, UserButton } from "@clerk/nextjs";
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -336,6 +337,8 @@ function TaskTable({ tasks, loading, search, onSearch, onCreate, createDisabled 
 }
 
 export default function DashboardPage() {
+  const { isLoaded, user } = useUser();
+  const hasAccess = Boolean(user);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
@@ -364,7 +367,9 @@ export default function DashboardPage() {
     }
   }, []);
 
-  useEffect(() => { void loadTasks(); }, [loadTasks]);
+  useEffect(() => {
+    if (isLoaded && hasAccess) void loadTasks();
+  }, [hasAccess, isLoaded, loadTasks]);
 
   function handleTaskCreated(task: Task) {
     setTasks((current) => [task, ...current]);
@@ -396,6 +401,20 @@ export default function DashboardPage() {
     }).filter((area) => area.name !== "Unassigned").slice(0, 5);
   const greeting = new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(new Date());
 
+  if (!isLoaded) {
+    return <main className="auth-page"><LoaderCircle size={20} className="spin" /><span>Checking your access…</span></main>;
+  }
+  if (!hasAccess) {
+    return (
+      <main className="auth-page">
+        <section className="access-denied">
+          <h1>Sign in required</h1>
+          <p>Sign in with the verified email address authorized for this planner.</p>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <div className="app-shell" id="overview">
       <div className={`sidebar-wrap${sidebarOpen ? " sidebar-open" : ""}`}><Sidebar onClose={() => setSidebarOpen(false)} /></div>
@@ -408,6 +427,7 @@ export default function DashboardPage() {
             <span className="updated-label">{lastUpdated ? `Updated at ${lastUpdated}` : "Live from Notion"}</span>
             <button className={`refresh-button${state === "loading" ? " refreshing" : ""}`} onClick={() => void loadTasks()} disabled={state === "loading"} aria-label="Refresh tasks"><RefreshCw size={14} /> <span>Refresh</span></button>
             <span className={`connection-label ${state === "ready" ? "connected" : state === "error" ? "disconnected" : ""}`}><i />{state === "ready" ? "Connected" : state === "error" ? "Not connected" : "Connecting"}</span>
+            <UserButton />
           </div>
         </header>
 

@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
 import { createNotionTask, fetchNotionTaskOptions, fetchNotionTasks, type CreateTaskInput } from "@/lib/notion";
+import { hasPlannerAccess } from "@/lib/access";
 import type { TasksResponse } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  if (!await hasPlannerAccess()) {
+    return NextResponse.json<TasksResponse>({ tasks: [], configured: false, error: "You are not authorized to view this planner." }, {
+      status: 403,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
   try {
     const [tasks, options] = await Promise.all([
       fetchNotionTasks(),
@@ -24,6 +31,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (!await hasPlannerAccess()) {
+    return NextResponse.json({ ok: false, error: "You are not authorized to modify this planner." }, { status: 403 });
+  }
   const origin = request.headers.get("origin");
   const hosts = [request.headers.get("host"), request.headers.get("x-forwarded-host")]
     .flatMap((value) => value?.split(",").map((host) => host.trim()) ?? []);

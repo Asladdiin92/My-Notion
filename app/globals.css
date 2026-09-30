@@ -370,3 +370,28 @@ button { color: inherit; }
   .section-heading { align-items: flex-start; }
   .live-label { max-width: 100px; line-height: 1.35; }
 }
+
+.auth-page {
+  display: flex;
+  min-height: 100dvh;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.access-denied {
+  max-width: 420px;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  text-align: center;
+}
+
+.access-denied h1 { margin: 0 0 8px; font-size: 20px; }
+.access-denied p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+.topbar-right > .cl-userButton-root { margin-left: 2px; }
