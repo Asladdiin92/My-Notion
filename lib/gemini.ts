@@ -1,7 +1,7 @@
 import "server-only";
 import type { Task } from "@/lib/types";
 
-const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-2.5-flash-lite"];
+const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite"];
 const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/models";
 
 type GeminiResponse = {

@@ -30,7 +30,7 @@ test("falls back to Flash-Lite when the primary model is in high demand", async 
   assert.equal(answer, "Start with the overdue task.");
   assert.equal(requestedModels.length, 2);
   assert.match(requestedModels[0], /gemini-3\.8-flash:generateContent$/);
-  assert.match(requestedModels[1], /gemini-2\.5-flash-lite:generateContent$/);
+  assert.match(requestedModels[1], /gemini-3\.5-flash-lite:generateContent$/);
 });
 
 test("does not retry with a fallback when Gemini rejects the API key", async () => {

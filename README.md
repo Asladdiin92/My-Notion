@@ -263,7 +263,7 @@ questions using your Notion tasks. For each request, the server fetches planner
 data and sends selected task details to Google's Gemini API. Task details are
 limited to 150 items per request; aggregate counts still cover the full
 planner. Requests use Gemini 3.8 Flash first and automatically retry with
-Gemini 2.5 Flash-Lite if the primary model is temporarily overloaded. Other
+Gemini 3.5 Flash-Lite if the primary model is temporarily overloaded. Other
 errors, such as an invalid API key, are reported without retrying.
 
 Start the development server:
