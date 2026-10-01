@@ -195,6 +195,7 @@ notion-dashboard/
 │   └── planner-assistant.tsx # AI next-action suggestions and task Q&A
 ├── lib/
 │   ├── access.ts            # Verified-email allowlist check
+│   ├── gemini.test.ts       # Gemini fallback behavior tests
 │   ├── gemini.ts            # Server-side Gemini API requests
 │   ├── notion.ts            # Notion API requests, validation, and mapping
 │   └── types.ts             # Shared Task and API data types
@@ -261,7 +262,9 @@ The **Planner assistant** on the dashboard can suggest next actions or answer
 questions using your Notion tasks. For each request, the server fetches planner
 data and sends selected task details to Google's Gemini API. Task details are
 limited to 150 items per request; aggregate counts still cover the full
-planner.
+planner. Requests use Gemini 3.8 Flash first and automatically retry with
+Gemini 2.5 Flash-Lite if the primary model is temporarily overloaded. Other
+errors, such as an invalid API key, are reported without retrying.
 
 Start the development server:
 
@@ -277,7 +280,7 @@ Useful project commands:
 ```bash
 npm run dev    # Start the development server
 npm run lint   # Check code with ESLint
-npm test       # Test Notion task defaults and CRUD payloads
+npm test      # Test Notion task defaults and Gemini fallback behavior
 npm run build  # Type-check and build the production app
 npm run start  # Serve a completed production build
 ```
