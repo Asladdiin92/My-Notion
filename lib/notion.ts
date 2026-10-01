@@ -37,6 +37,7 @@ type NotionPropertySchema = {
   rich_text?: Record<string, never>;
   select?: { options?: Array<{ name: string }> };
   status?: { options?: Array<{ name: string }> };
+  number?: Record<string, never>;
   date?: Record<string, never>;
   checkbox?: Record<string, never>;
 };
@@ -52,6 +53,9 @@ export type CreateTaskInput = {
   priority?: string;
   area?: string;
   course?: string;
+  courseCode?: string;
+  estimatedHours?: number | null;
+  assessment?: string;
   dueDate?: string;
   nextAction?: string;
 };
@@ -133,6 +137,7 @@ export async function fetchNotionTaskOptions() {
     priorities: optionsFor(properties, "NOTION_PRIORITY_PROPERTY", "Priority"),
     areas: optionsFor(properties, "NOTION_AREA_PROPERTY", "Area"),
     courses: optionsFor(properties, "NOTION_COURSE_PROPERTY", "Course"),
+    assessments: optionsFor(properties, "NOTION_ASSESSMENT_PROPERTY", "Assessment"),
   };
 }
 
@@ -199,13 +204,31 @@ function taskProperties(
   addChoiceProperty(properties, schema, "NOTION_PRIORITY_PROPERTY", "Priority", priority, "select");
   addChoiceProperty(properties, schema, "NOTION_AREA_PROPERTY", "Area", input.area, "select");
   addChoiceProperty(properties, schema, "NOTION_COURSE_PROPERTY", "Course", input.course, "select");
+  addChoiceProperty(properties, schema, "NOTION_ASSESSMENT_PROPERTY", "Assessment", input.assessment, "select");
+  addTextProperty(properties, schema, "NOTION_COURSE_CODE_PROPERTY", "Course Code", input.courseCode);
   addTextProperty(properties, schema, "NOTION_NEXT_ACTION_PROPERTY", "Next Action", input.nextAction);
+  if (input.estimatedHours !== undefined && input.estimatedHours !== null) {
+    const name = schemaProperty(schema, "NOTION_ESTIMATED_HOURS_PROPERTY", "Est.");
+    if (!name || schema[name]?.type !== "number") {
+      throw new Error(`The Notion database does not have a number property named "${process.env.NOTION_ESTIMATED_HOURS_PROPERTY || "Est."}".`);
+    }
+    if (!Number.isFinite(input.estimatedHours) || input.estimatedHours < 0 || input.estimatedHours > 10000) {
+      throw new Error("Estimated hours must be a number between 0 and 10,000.");
+    }
+    properties[name] = { number: input.estimatedHours };
+  }
 
   if (clearEmptyOptional) {
     clearChoiceProperty(properties, schema, "NOTION_PRIORITY_PROPERTY", "Priority", input.priority);
     clearChoiceProperty(properties, schema, "NOTION_AREA_PROPERTY", "Area", input.area);
     clearChoiceProperty(properties, schema, "NOTION_COURSE_PROPERTY", "Course", input.course);
+    clearChoiceProperty(properties, schema, "NOTION_ASSESSMENT_PROPERTY", "Assessment", input.assessment);
+    clearTextProperty(properties, schema, "NOTION_COURSE_CODE_PROPERTY", "Course Code", input.courseCode);
     clearTextProperty(properties, schema, "NOTION_NEXT_ACTION_PROPERTY", "Next Action", input.nextAction);
+    if (input.estimatedHours === null) {
+      const name = schemaProperty(schema, "NOTION_ESTIMATED_HOURS_PROPERTY", "Est.");
+      if (name && schema[name]?.type === "number") properties[name] = { number: null };
+    }
   }
 
   const dateName = schemaProperty(schema, "NOTION_DUE_DATE_PROPERTY", "Date");
@@ -327,7 +350,7 @@ export async function archiveNotionTask(pageId: string): Promise<void> {
 
 function validateInputLengths(input: CreateTaskInput): void {
   for (const [label, value] of Object.entries(input)) {
-    if (value !== undefined && value.length > 2000) {
+    if (typeof value === "string" && value.length > 2000) {
       throw new Error(`${label} must be 2,000 characters or fewer.`);
     }
   }
@@ -372,6 +395,13 @@ function toTask(page: NotionPage): Task {
     type: propertyText(properties, "NOTION_TYPE_PROPERTY", "Type") || "Other",
     area: propertyText(properties, "NOTION_AREA_PROPERTY", "Area") || "Unassigned",
     course: propertyText(properties, "NOTION_COURSE_PROPERTY", "Course"),
+    courseCode: propertyText(properties, "NOTION_COURSE_CODE_PROPERTY", "Course Code"),
+    estimatedHours: (() => {
+      const name = configuredProperty(properties, "NOTION_ESTIMATED_HOURS_PROPERTY", "Est.");
+      const value = name ? properties[name]?.number : null;
+      return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+    })(),
+    assessment: propertyText(properties, "NOTION_ASSESSMENT_PROPERTY", "Assessment"),
     nextAction: propertyText(properties, "NOTION_NEXT_ACTION_PROPERTY", "Next Action"),
     dueDate,
     createdAt: page.created_time,

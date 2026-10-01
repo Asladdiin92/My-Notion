@@ -318,7 +318,7 @@ function parseDayPlan(
 export async function getPlannerAssistantPlan(
   instruction: string,
   tasks: Task[],
-  options: TaskOptions = { types: [], statuses: [], priorities: [], areas: [], courses: [] },
+  options: TaskOptions = { types: [], statuses: [], priorities: [], areas: [], courses: [], assessments: [] },
   localDate?: string,
   timezone?: string,
 ): Promise<PlannerPlan> {

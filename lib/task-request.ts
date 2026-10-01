@@ -19,17 +19,22 @@ export async function parseTaskInput(request: Request) {
       return { ok: false as const, error: "Enter a planner item." };
     }
     const values = body as Record<string, unknown>;
-    const allowedFields = new Set(["title", "type", "status", "priority", "area", "course", "dueDate", "nextAction"]);
+    const allowedFields = new Set(["title", "type", "status", "priority", "area", "course", "courseCode", "estimatedHours", "assessment", "dueDate", "nextAction"]);
     if (Object.keys(values).some((key) => !allowedFields.has(key))) {
       return { ok: false as const, error: "The request contains an unsupported field." };
     }
     if (typeof values.title !== "string" || !values.title.trim()) {
       return { ok: false as const, error: "A task title is required." };
     }
-    for (const name of ["type", "status", "priority", "area", "course", "dueDate", "nextAction"] as const) {
+    for (const name of ["type", "status", "priority", "area", "course", "courseCode", "assessment", "dueDate", "nextAction"] as const) {
       if (values[name] !== undefined && (typeof values[name] !== "string" || values[name].length > 2000)) {
         return { ok: false as const, error: `Invalid ${name} value.` };
       }
+    }
+    if (values.estimatedHours !== undefined && values.estimatedHours !== null &&
+        (typeof values.estimatedHours !== "number" || !Number.isFinite(values.estimatedHours) ||
+         values.estimatedHours < 0 || values.estimatedHours > 10000)) {
+      return { ok: false as const, error: "Estimated hours must be a number between 0 and 10,000." };
     }
     if (values.title.length > 2000) {
       return { ok: false as const, error: "Title must be 2,000 characters or fewer." };
@@ -41,6 +46,9 @@ export async function parseTaskInput(request: Request) {
       priority: values.priority as string | undefined,
       area: values.area as string | undefined,
       course: values.course as string | undefined,
+      courseCode: values.courseCode as string | undefined,
+      estimatedHours: values.estimatedHours as number | null | undefined,
+      assessment: values.assessment as string | undefined,
       dueDate: values.dueDate as string | undefined,
       nextAction: values.nextAction as string | undefined,
     };

@@ -121,10 +121,13 @@ Notion returns pages with nested property structures. The mapping in
 | --- | --- | --- |
 | `title` | `Item` (title) | Planner item name and task table link. |
 | `type` | `Type` (select) | Task-type chart, badges, and create form. |
-| `dueDate` | `Date` (date) | Calendar markers, upcoming deadlines, and overdue counts. |
+| `dueDate` | `Date` (date) | Calendar markers, upcoming deadlines, and overdue counts; date-times retain and display their time in the browser's local time zone. |
 | `status` | `Status` (status) | Status label and completion calculation. |
 | `area` | `Area` (select) | Progress-by-area calculations. |
 | `course` | `Course` (select for creation; select or rich text for reading) | Secondary label below a task title. |
+| `courseCode` | `Course Code` (rich text) | Course-code filter and course progress grouping. |
+| `estimatedHours` | `Est.` (number) | Estimated workload in the task list and course progress. |
+| `assessment` | `Assessment` (select) | Assessment badge and deliverables filtering. |
 | `priority` | `Priority` (select) | Priority chart and task table badge. |
 | `nextAction` | `Next Action` (rich text) | Next-action column in the task table. |
 | `completed` | `Completed` (checkbox), or completion status | Completed versus pending totals. |
@@ -137,8 +140,8 @@ different.
 
 ### 4. Create a planner item
 
-The **New item** button opens a form. Type, Status, Priority, Area, and Course
-choices are fetched from your actual database schema; they are not hard-coded.
+The **New item** button opens a form. Type, Status, Priority, Area, Course, and
+Assessment choices are fetched from your actual database schema; they are not hard-coded.
 If a required choice isn't provided, creation defaults to `Deliverable` (or
 `Task`, then the first Type option), `Planned` (or `Not started`, then the first
 Status option), and `Medium` (or `Normal`, `Low`, then the first Priority
@@ -158,6 +161,8 @@ When the form is submitted:
 
 The table's **Edit** action opens the form with current values; saving calls
 `PATCH /api/tasks/:id`, and blank optional fields clear their Notion values.
+Course Code, Est. (hours), Assessment, and a date/time can also be entered or
+edited when those properties exist in the database.
 **Delete** asks for confirmation and calls `DELETE /api/tasks/:id`, which
 archives the page in Notion rather than permanently deleting it. Archived items
 can be restored from Notion's trash.
@@ -182,6 +187,12 @@ can be restored from Notion's trash.
   earlier than today's local date.
 - **Progress by area:** groups tasks by Area and displays
   `completed tasks / total tasks` and that area's completion percentage.
+- **Course progress:** groups items by Course Code and displays completed and
+  pending counts plus the estimated hours remaining for each course.
+- **Task filters and views:** category tabs filter all items, deliverables,
+  routines/prayers, or items with a course code. The course selector filters
+  by an individual code. Table and Board views show the full loaded result set;
+  the board groups items by Notion Status.
 - **Search and refresh:** task search filters the currently loaded tasks in the
   browser. **Refresh** makes fresh requests to the API and Notion.
 
@@ -328,12 +339,15 @@ npm run start  # Serve a completed production build
    NOTION_TITLE_PROPERTY=Name
    NOTION_DUE_DATE_PROPERTY=Deadline
    NOTION_COMPLETED_PROPERTY=Done
+   NOTION_COURSE_CODE_PROPERTY=Course Code
+   NOTION_ESTIMATED_HOURS_PROPERTY=Est.
+   NOTION_ASSESSMENT_PROPERTY=Assessment
    ```
 
 Only set an override when a property name is different. The form supports the
-database's select/status option properties, the date property, and rich-text
-Next action property. If your database uses a different type for a field, adapt
-the corresponding mapping in `lib/notion.ts`.
+database's select/status option properties, date property, rich-text Course
+Code and Next action properties, and numeric Est. property. If your database
+uses a different type for a field, adapt the corresponding mapping in `lib/notion.ts`.
 
 ## Deploy to Vercel
 

@@ -7,6 +7,9 @@ export type Task = {
   type: string;
   area: string;
   course: string;
+  courseCode?: string;
+  estimatedHours?: number;
+  assessment?: string;
   nextAction: string;
   dueDate: string | null;
   createdAt: string;
@@ -19,6 +22,7 @@ export type TaskOptions = {
   priorities: string[];
   areas: string[];
   courses: string[];
+  assessments: string[];
 };
 
 export type TasksResponse = {

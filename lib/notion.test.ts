@@ -16,7 +16,10 @@ const database = {
     Status: { type: "status", status: { options: [{ name: "Planned" }, { name: "In progress" }] } },
     Priority: { type: "select", select: { options: [{ name: "High" }, { name: "Medium" }, { name: "Low" }] } },
     Area: { type: "select", select: { options: [{ name: "University" }] } },
-    Course: { type: "select", select: { options: [{ name: "General" }] } },
+    Course: { type: "select", select: { options: [{ name: "General" }, { name: "Network Design" }] } },
+    "Course Code": { type: "rich_text", rich_text: {} },
+    "Est.": { type: "number", number: {} },
+    Assessment: { type: "select", select: { options: [{ name: "Lab" }, { name: "Assignment" }] } },
     Date: { type: "date", date: {} },
     "Next Action": { type: "rich_text", rich_text: {} },
     Completed: { type: "checkbox", checkbox: {} },
@@ -72,6 +75,12 @@ test("creates a task using schema-aware defaults when fields are omitted", async
   assert.equal(task.title, "Read chapter");
 });
 
+test("loads assessment choices from the Notion database schema", async () => {
+  mockNotion({}, () => {});
+  const options = await notion.fetchNotionTaskOptions();
+  assert.deepEqual(options.assessments, ["Lab", "Assignment"]);
+});
+
 test("creates a task with a confirmed local date-time due date", async () => {
   let createBody: Record<string, unknown> = {};
   mockNotion(page({
@@ -91,6 +100,35 @@ test("creates a task with a confirmed local date-time due date", async () => {
   assert.equal(task.dueDate, "2026-10-05T14:00:00+03:00");
 });
 
+test("reads and writes course codes, estimated hours, and assessment tags", async () => {
+  let createBody: Record<string, unknown> = {};
+  mockNotion(page({
+    Item: { type: "title", title: [{ plain_text: "Network design lab" }] },
+    Type: { type: "select", select: { name: "Deliverable" } },
+    Status: { type: "status", status: { name: "Not started" } },
+    Course: { type: "select", select: { name: "Network Design" } },
+    "Course Code": { type: "rich_text", rich_text: [{ plain_text: "ITeC4111" }] },
+    "Est.": { type: "number", number: 3 },
+    Assessment: { type: "select", select: { name: "Lab" } },
+  }), (_url, _init, body) => { createBody = body; });
+
+  const task = await notion.createNotionTask({
+    title: "Network design lab",
+    course: "Network Design",
+    courseCode: "ITeC4111",
+    estimatedHours: 3,
+    assessment: "Lab",
+  });
+  const properties = createBody.properties as Record<string, Record<string, unknown>>;
+
+  assert.deepEqual(properties["Course Code"], { rich_text: [{ text: { content: "ITeC4111" } }] });
+  assert.deepEqual(properties["Est."], { number: 3 });
+  assert.deepEqual(properties.Assessment, { select: { name: "Lab" } });
+  assert.equal(task.courseCode, "ITeC4111");
+  assert.equal(task.estimatedHours, 3);
+  assert.equal(task.assessment, "Lab");
+});
+
 test("updates task properties and clears optional values", async () => {
   let updateBody: Record<string, unknown> = {};
   mockNotion(page({
@@ -100,6 +138,9 @@ test("updates task properties and clears optional values", async () => {
     Priority: { type: "select", select: null },
     Area: { type: "select", select: null },
     Course: { type: "select", select: null },
+    "Course Code": { type: "rich_text", rich_text: [] },
+    "Est.": { type: "number", number: null },
+    Assessment: { type: "select", select: null },
     Date: { type: "date", date: null },
     "Next Action": { type: "rich_text", rich_text: [] },
   }), (url, init, body) => {
@@ -115,6 +156,9 @@ test("updates task properties and clears optional values", async () => {
     priority: "",
     area: "",
     course: "",
+    courseCode: "",
+    estimatedHours: null,
+    assessment: "",
     dueDate: "",
     nextAction: "",
   });
@@ -123,6 +167,9 @@ test("updates task properties and clears optional values", async () => {
   assert.deepEqual(properties.Priority, { select: null });
   assert.deepEqual(properties.Area, { select: null });
   assert.deepEqual(properties.Course, { select: null });
+  assert.deepEqual(properties["Course Code"], { rich_text: [] });
+  assert.deepEqual(properties["Est."], { number: null });
+  assert.deepEqual(properties.Assessment, { select: null });
   assert.deepEqual(properties.Date, { date: null });
   assert.deepEqual(properties["Next Action"], { rich_text: [] });
 });

@@ -160,6 +160,7 @@ test("rejects a proposed select value that is not in the Notion options", async 
       priorities: ["High", "Medium", "Low"],
       areas: ["University"],
       courses: ["Biology"],
+      assessments: ["Lab"],
     }),
     /not an option in your Notion database/,
   );
