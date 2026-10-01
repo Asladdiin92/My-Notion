@@ -402,6 +402,13 @@ export default function DashboardPage() {
     setSuccessMessage(editingTask ? `“${task.title}” was updated.` : `“${task.title}” was added to your Notion planner.`);
   }
 
+  function handleAssistantTaskSaved(task: Task) {
+    setTasks((current) => current.some((item) => item.id === task.id)
+      ? current.map((item) => item.id === task.id ? task : item)
+      : [task, ...current]);
+    setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date()));
+  }
+
   async function handleTaskDelete(task: Task) {
     if (!window.confirm(`Archive “${task.title}” from your Notion planner? This can be restored from Notion’s trash.`)) return;
     setDeletingTaskId(task.id);
@@ -499,7 +506,7 @@ export default function DashboardPage() {
             <article className="panel chart-panel timeline-panel"><div className="panel-heading"><div><h3>Task timeline</h3><p>Tasks created over the last 6 months</p></div><span className="chart-heading-icon tone-blue"><CalendarDays size={15} /></span></div><TimelineChart data={timelineData} /></article>
           </section>
 
-          <PlannerAssistant disabled={state !== "ready"} />
+          <PlannerAssistant disabled={state !== "ready"} tasks={tasks} onTaskSaved={handleAssistantTaskSaved} />
 
           <div className="content-grid">
             <CalendarCard tasks={tasks} />

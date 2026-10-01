@@ -147,6 +147,22 @@ button { color: inherit; }
 .assistant-question button:disabled { cursor: not-allowed; opacity: .55; }
 .assistant-response { margin-top: 12px; padding: 11px 12px; border: 1px solid #e8e9e4; border-radius: 6px; background: #fbfbf9; color: #555750; font-size: 10px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .assistant-error { border-color: #eee1cd; background: #fffaf1; color: #76664f; }
+.assistant-proposal { margin-top: 12px; padding: 11px 12px; border: 1px solid #dfe8d9; border-radius: 6px; background: #f8faf6; color: #555750; }
+.assistant-proposal-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.assistant-proposal-heading strong { color: #4f6448; font-size: 10px; }
+.assistant-proposal-heading > span { color: #898b83; font-size: 9px; }
+.assistant-proposal > p { margin: 6px 0 9px; color: #76786f; font-size: 9px; line-height: 1.5; }
+.assistant-change-list { display: grid; gap: 5px; margin: 0; }
+.assistant-change-list > div { display: grid; grid-template-columns: minmax(75px, .3fr) minmax(0, 1fr); gap: 8px; font-size: 9px; line-height: 1.45; }
+.assistant-change-list dt { color: #92948c; }
+.assistant-change-list dd { min-width: 0; margin: 0; color: #555750; overflow-wrap: anywhere; }
+.assistant-old-value { color: #999b94; text-decoration: line-through; }
+.assistant-proposal-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 11px; padding-top: 9px; border-top: 1px solid #e9eee5; }
+.assistant-cancel, .assistant-confirm { display: inline-flex; min-height: 29px; align-items: center; justify-content: center; gap: 5px; padding: 0 9px; border: 1px solid #e2e5de; border-radius: 5px; background: #fff; color: #777970; cursor: pointer; font-size: 9px; }
+.assistant-cancel:hover:not(:disabled) { background: #f1f2ef; }
+.assistant-confirm { border-color: #71866a; background: #74886c; color: #fff; font-weight: 600; }
+.assistant-confirm:hover:not(:disabled) { background: #627958; }
+.assistant-cancel:disabled, .assistant-confirm:disabled { cursor: not-allowed; opacity: .55; }
 .assistant-hint, .assistant-privacy { margin: 9px 0 0; color: #999b94; font-size: 8px; line-height: 1.5; }
 .assistant-privacy { margin-top: 10px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }

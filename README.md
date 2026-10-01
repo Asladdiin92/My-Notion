@@ -34,6 +34,9 @@ returns task data to the browser.
 When you create, edit, or archive a planner item, the browser calls this app's
 API. The server checks the Clerk session and verified-email allowlist, validates
 the input against the Notion database schema, and then makes the Notion change.
+The planner assistant can turn natural-language instructions into a proposed
+create or edit. It only reads Notion to prepare the proposal; you must confirm
+the preview before the browser calls the existing create or edit API.
 
 ```text
 Your browser (React dashboard + Clerk sign-in)
@@ -46,7 +49,7 @@ Next.js middleware + API access check (allowlisted verified email)
         │ POST /api/tasks           create a planner item
         │ PATCH /api/tasks/:id      edit a planner item
         │ DELETE /api/tasks/:id     archive a planner item
-        │ POST /api/assistant      ask about tasks or get next-action ideas
+        │ POST /api/assistant      ask, get suggestions, or prepare a change preview
         ▼
 Next.js server (API routes + Notion mapping)
         │
@@ -192,7 +195,7 @@ notion-dashboard/
 │   └── page.tsx             # Main dashboard, metrics, calendar, and item form
 ├── components/
 │   ├── dashboard-charts.tsx # Recharts visualizations
-│   └── planner-assistant.tsx # AI next-action suggestions and task Q&A
+│   └── planner-assistant.tsx # AI suggestions, task Q&A, and confirmed edits
 ├── lib/
 │   ├── access.ts            # Verified-email allowlist check
 │   ├── gemini.test.ts       # Gemini fallback behavior tests
@@ -258,13 +261,18 @@ by the API; do not expose it as a `NEXT_PUBLIC_` variable. The Gemini key is
 used only by the server-side planner assistant; never add a `NEXT_PUBLIC_`
 prefix to it.
 
-The **Planner assistant** on the dashboard can suggest next actions or answer
-questions using your Notion tasks. For each request, the server fetches planner
-data and sends selected task details to Google's Gemini API. Task details are
-limited to 150 items per request; aggregate counts still cover the full
-planner. Requests use Gemini 3.8 Flash first and automatically retry with
-Gemini 3.5 Flash-Lite if the primary model is temporarily overloaded. Other
-errors, such as an invalid API key, are reported without retrying.
+The **Planner assistant** can suggest next actions, answer questions, or
+interpret instructions such as “add a biology review task tomorrow” or “move
+my biology deadline to Friday.” For create/edit instructions, it shows a
+preview and changes nothing in Notion until you select **Confirm**. It asks
+for clarification if an edit does not clearly match a task; archiving tasks
+is not available through the assistant. For each request, the server fetches
+planner data and sends selected task details to Google's Gemini API. Task
+details are limited to 150 items per request; aggregate counts still cover
+the full planner. Requests use Gemini 3.8 Flash first and automatically retry
+with Gemini 3.5 Flash-Lite if the primary model is temporarily overloaded.
+It also tries the fallback after a request timeout. Other errors, such as an
+invalid API key, are reported without retrying.
 
 Start the development server:
 

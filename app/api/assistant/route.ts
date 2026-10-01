@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { hasPlannerAccess } from "@/lib/access";
-import { getPlannerAssistantAnswer } from "@/lib/gemini";
-import { fetchNotionTasks } from "@/lib/notion";
+import { getPlannerAssistantAnswer, getPlannerAssistantPlan } from "@/lib/gemini";
+import { fetchNotionTaskOptions, fetchNotionTasks } from "@/lib/notion";
 import { isSameOrigin } from "@/lib/task-request";
 
 export const dynamic = "force-dynamic";
@@ -38,17 +38,22 @@ export async function POST(request: Request) {
   if (Object.keys(values).some((key) => key !== "mode" && key !== "question")) {
     return NextResponse.json({ error: "The request contains an unsupported field." }, { status: 400 });
   }
-  if (values.mode !== "suggest" && values.mode !== "ask") {
+  if (values.mode !== "suggest" && values.mode !== "ask" && values.mode !== "plan") {
     return NextResponse.json({ error: "Choose a valid assistant action." }, { status: 400 });
   }
-  if (values.mode === "ask" && (typeof values.question !== "string" || !values.question.trim())) {
-    return NextResponse.json({ error: "Enter a question about your planner." }, { status: 400 });
+  if (values.mode !== "suggest" && (typeof values.question !== "string" || !values.question.trim())) {
+    return NextResponse.json({ error: "Enter an instruction or question for your planner." }, { status: 400 });
   }
   if (values.question !== undefined && (typeof values.question !== "string" || values.question.length > 1000)) {
-    return NextResponse.json({ error: "Questions must be 1,000 characters or fewer." }, { status: 400 });
+    return NextResponse.json({ error: "Instructions must be 1,000 characters or fewer." }, { status: 400 });
   }
 
   try {
+    if (values.mode === "plan") {
+      const [tasks, options] = await Promise.all([fetchNotionTasks(), fetchNotionTaskOptions()]);
+      const plan = await getPlannerAssistantPlan(values.question as string, tasks, options);
+      return NextResponse.json({ plan }, { headers: { "Cache-Control": "no-store" } });
+    }
     const tasks = await fetchNotionTasks();
     const answer = await getPlannerAssistantAnswer(values.mode, values.question as string | undefined, tasks);
     return NextResponse.json({ answer }, { headers: { "Cache-Control": "no-store" } });
