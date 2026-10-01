@@ -41,11 +41,15 @@ const database = {
 
 const originalFetch = globalThis.fetch;
 
-function mockNotion(page: Record<string, unknown>, capture: (url: string, init: RequestInit, body: Record<string, unknown>) => void) {
+function mockNotion(
+  page: Record<string, unknown>,
+  capture: (url: string, init: RequestInit, body: Record<string, unknown>) => void,
+  schema: { properties: Record<string, unknown> } = database,
+) {
   globalThis.fetch = async (input, init = {}) => {
     const url = String(input);
     if (url.endsWith("/databases/notion-test-database") && (!init.method || init.method === "GET")) {
-      return Response.json(database);
+      return Response.json(schema);
     }
     const body = init.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
     capture(url, init, body);
@@ -143,6 +147,57 @@ test("reads and writes course codes, estimated hours, and assessment tags", asyn
   assert.equal(task.courseCode, "ITeC4111");
   assert.equal(task.estimatedHours, 3);
   assert.equal(task.assessment, "Lab");
+});
+
+test("maps the live Notion metadata property aliases", async () => {
+  const liveProperties: Record<string, unknown> = { ...database.properties };
+  delete liveProperties["Est."];
+  delete liveProperties["Actual"];
+  delete liveProperties["Assessment"];
+  delete liveProperties["Venue Link"];
+  liveProperties["Estimated Hours"] = { type: "number", number: {} };
+  liveProperties["Actual Hours"] = { type: "number", number: {} };
+  liveProperties["Assessment Type"] = {
+    type: "select",
+    select: { options: [{ name: "Lab" }, { name: "Assignment" }] },
+  };
+  liveProperties["Venue / Link"] = { type: "rich_text", rich_text: {} };
+
+  const pageData = page({
+    Item: { type: "title", title: [{ plain_text: "Security lab" }] },
+    Type: { type: "select", select: { name: "Deliverable" } },
+    Status: { type: "status", status: { name: "Planned" } },
+    "Estimated Hours": { type: "number", number: 3 },
+    "Actual Hours": { type: "number", number: 1 },
+    "Assessment Type": { type: "select", select: { name: "Lab" } },
+    "Venue / Link": { type: "rich_text", rich_text: [{ plain_text: "Room 4" }] },
+  });
+  let updateBody: Record<string, unknown> = {};
+  mockNotion(pageData, (_url, _init, body) => { updateBody = body; }, { properties: liveProperties });
+
+  const options = await notion.fetchNotionTaskOptions();
+  assert.ok(options.availableFields.includes("estimatedHours"));
+  assert.ok(options.availableFields.includes("actualHours"));
+  assert.ok(options.availableFields.includes("assessment"));
+  assert.ok(options.availableFields.includes("venueLink"));
+  assert.deepEqual(options.assessments, ["Lab", "Assignment"]);
+
+  const task = await notion.updateNotionTask("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", {
+    title: "Security lab",
+    estimatedHours: 4,
+    actualHours: 2,
+    assessment: "Lab",
+    venueLink: "https://example.com/room",
+  });
+  const properties = updateBody.properties as Record<string, Record<string, unknown>>;
+  assert.deepEqual(properties["Estimated Hours"], { number: 4 });
+  assert.deepEqual(properties["Actual Hours"], { number: 2 });
+  assert.deepEqual(properties["Assessment Type"], { select: { name: "Lab" } });
+  assert.deepEqual(properties["Venue / Link"], { rich_text: [{ text: { content: "https://example.com/room" } }] });
+  assert.equal(task.estimatedHours, 3);
+  assert.equal(task.actualHours, 1);
+  assert.equal(task.assessment, "Lab");
+  assert.equal(task.venueLink, "Room 4");
 });
 
 test("round-trips the original planner metadata and date range", async () => {

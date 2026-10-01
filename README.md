@@ -133,9 +133,9 @@ Notion returns pages with nested property structures. The mapping in
 | `area` | `Area` (select) | Progress-by-area calculations. |
 | `course` | `Course` (select for creation; select or rich text for reading) | Secondary label below a task title. |
 | `courseCode` | `Course Code` (rich text) | Course-code filter and course progress grouping. |
-| `estimatedHours` | `Est.` (number) | Estimated workload in the task list and course progress. |
-| `actualHours` | `Actual` (number) | Actual workload and estimated-versus-actual progress. |
-| `assessment` | `Assessment` (select) | Assessment badge and deliverables filtering. |
+| `estimatedHours` | `Est.` or `Estimated Hours` (number) | Estimated workload in the task list and course progress. |
+| `actualHours` | `Actual` or `Actual Hours` (number) | Actual workload and estimated-versus-actual progress. |
+| `assessment` | `Assessment` or `Assessment Type` (select) | Assessment badge and deliverables filtering. |
 | `dateEnd` | `Date.end` (date range) | End of a Notion date range or event block. |
 | `deliverable` | `Deliverable` (checkbox) | Deliverable-only filtering, deadlines, and progress. If absent, Type `Deliverable` is used. |
 | `creditHours` | `Credit Hours` (number) | Course credit value. |
@@ -148,7 +148,7 @@ Notion returns pages with nested property structures. The mapping in
 | `resourceLink` | `Resource Link` (URL or rich text) | Course, repository, or submission reference. |
 | `semester` | `Semester` (select) | Semester filter in the calendar. |
 | `timeBlock` | `Time Block` (rich text) | Recurring class, prayer, or work time. |
-| `venueLink` | `Venue Link` (URL or rich text) | Room, meeting place, or online link. |
+| `venueLink` | `Venue Link` or `Venue / Link` (URL or rich text) | Room, meeting place, or online link. |
 | `priority` | `Priority` (select) | Priority chart and task table badge. |
 | `nextAction` | `Next Action` (rich text) | Next-action column in the task table. |
 | `completed` | `Completed` (checkbox), or completion status | Completed versus pending totals. |

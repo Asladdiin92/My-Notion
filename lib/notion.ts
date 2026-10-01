@@ -110,6 +110,13 @@ async function notionError(response: Response): Promise<Error> {
   return new Error(`Notion API error${details?.code ? ` (${details.code})` : ""}: ${details?.message ?? response.statusText}`);
 }
 
+const PROPERTY_ALIASES: Record<string, string[]> = {
+  NOTION_ESTIMATED_HOURS_PROPERTY: ["Estimated Hours"],
+  NOTION_ACTUAL_HOURS_PROPERTY: ["Actual Hours"],
+  NOTION_ASSESSMENT_PROPERTY: ["Assessment Type"],
+  NOTION_VENUE_LINK_PROPERTY: ["Venue / Link"],
+};
+
 async function fetchDatabase(): Promise<NotionDatabase> {
   const token = notionToken();
   const response = await fetch(`${NOTION_API}/databases/${encodeURIComponent(notionDatabaseId())}`, {
@@ -122,15 +129,21 @@ async function fetchDatabase(): Promise<NotionDatabase> {
 }
 
 function configuredProperty(properties: Record<string, NotionValue>, variable: string, fallback: string): string | undefined {
-  const name = process.env[variable] || fallback;
-  if (properties[name]) return name;
+  const names = [process.env[variable], fallback, ...(PROPERTY_ALIASES[variable] ?? [])].filter(
+    (name): name is string => Boolean(name),
+  );
+  const name = names.find((candidate) => properties[candidate]);
+  if (name) return name;
   const value = Object.entries(properties).find(([, property]) => property.type === fallback);
   return value?.[0];
 }
 
 function schemaProperty(properties: Record<string, NotionPropertySchema>, variable: string, fallback: string): string | undefined {
-  const name = process.env[variable] || fallback;
-  if (properties[name]) return name;
+  const names = [process.env[variable], fallback, ...(PROPERTY_ALIASES[variable] ?? [])].filter(
+    (name): name is string => Boolean(name),
+  );
+  const name = names.find((candidate) => properties[candidate]);
+  if (name) return name;
   const value = Object.entries(properties).find(([, property]) => property.type === fallback);
   return value?.[0];
 }
