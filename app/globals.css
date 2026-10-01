@@ -133,8 +133,36 @@ button { color: inherit; }
 .legend-row strong { color: #555750; font-size: 8px; }
 .timeline-chart { height: 151px; margin-top: 0; }
 .chart-empty { display: grid; min-height: 130px; place-items: center; padding: 15px; color: #9c9e97; font-size: 9px; text-align: center; line-height: 1.5; }
+.progress-details-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: -10px 0 20px; }
+.progress-detail-card { min-height: 140px; padding: 12px; }
+.progress-detail-card .panel-heading h3 { font-size: 10px; }
+.progress-detail-card .panel-heading p { font-size: 8px; }
+.hours-comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 17px; }
+.hours-comparison > div { display: grid; gap: 4px; padding: 10px 8px; border-radius: 6px; background: #f7f8f5; }
+.hours-comparison span, .deliverable-progress-metrics span { color: #969890; font-size: 8px; }
+.hours-comparison strong { color: #4e5549; font: 700 16px var(--font-display); }
+.type-progress-list, .review-progress-list { display: grid; gap: 7px; margin-top: 11px; }
+.type-progress-row { display: flex; justify-content: space-between; gap: 8px; color: #777970; font-size: 8px; }
+.type-progress-row strong { color: #5e6259; font-weight: 600; }
+.deliverable-progress-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 20px; }
+.deliverable-progress-metrics > div { display: grid; gap: 4px; padding: 9px; border-radius: 6px; background: #f7f8f5; }
+.deliverable-progress-metrics strong { color: #4e5549; font: 700 15px var(--font-display); }
+.deliverable-progress-metrics .overdue-value { color: #b75d50; }
+.review-progress-list a { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 6px; color: #5e6059; font-size: 8px; }
+.review-progress-list a time { color: #92948c; }
+.review-progress-list a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .assistant-panel { margin-bottom: 19px; padding: 15px 16px; }
+.assistant-planning-preferences { margin-top: 12px; padding: 9px 10px; border: 1px solid #eceee8; border-radius: 6px; background: #fafbf8; }
+.assistant-planning-preferences > summary { color: #66745f; cursor: pointer; font-size: 9px; font-weight: 600; }
+.assistant-planning-preferences > p { margin: 7px 0 0; color: #969890; font-size: 8px; }
+.assistant-planning-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }
+.assistant-planning-grid label { display: grid; min-width: 0; gap: 4px; }
+.assistant-planning-grid label > span { color: #6d7067; font-size: 8px; font-weight: 500; }
+.assistant-planning-grid input, .assistant-planning-grid select, .assistant-planning-grid textarea { width: 100%; min-width: 0; min-height: 28px; padding: 5px 7px; border: 1px solid #e8e9e4; border-radius: 5px; background: #fff; color: #5e6059; font-size: 8px; }
+.assistant-planning-grid select[multiple] { min-height: 60px; }
+.assistant-planning-grid textarea { min-height: 44px; resize: vertical; }
+.assistant-planning-instructions { grid-column: span 2; }
 .assistant-controls { display: flex; align-items: stretch; gap: 9px; margin-top: 14px; }
 .assistant-suggest { display: inline-flex; min-height: 34px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 6px; padding: 0 11px; border: 1px solid #71866a; border-radius: 6px; background: #74886c; color: #fff; cursor: pointer; font-size: 9px; font-weight: 600; }
 .assistant-suggest:hover:not(:disabled) { background: #627958; }
@@ -202,24 +230,37 @@ button { color: inherit; }
 .content-grid { display: grid; grid-template-columns: minmax(0, 1.13fr) minmax(260px, .87fr); gap: 13px; margin-bottom: 19px; }
 .calendar-panel, .areas-panel { min-height: 353px; padding: 15px 16px; }
 .calendar-controls { display: flex; gap: 5px; }
+.calendar-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 10px; }
+.calendar-filters label { display: inline-flex; height: 25px; align-items: center; gap: 4px; padding: 0 5px; border: 1px solid #e9eae5; border-radius: 4px; color: #92948c; font-size: 7px; }
+.calendar-filters input, .calendar-filters select { max-width: 112px; height: 25px; padding: 0 5px; border: 1px solid #e9eae5; border-radius: 4px; background: #fff; color: #696b64; font-size: 7px; }
+.calendar-filters label input { width: 105px; border: 0; }
 .round-button { display: inline-grid; width: 26px; height: 26px; place-items: center; padding: 0; border: 1px solid #ebebe7; border-radius: 6px; background: #fff; color: #777971; cursor: pointer; }
 .round-button:hover { background: #f6f7f3; color: #505f49; }
 .calendar-month { display: flex; align-items: center; justify-content: space-between; margin: 16px 0 9px; color: #50524b; font-size: 10px; font-weight: 600; }
-.calendar-current { color: #85917d; font-size: 8px; font-weight: 500; }
+.calendar-current { padding: 0; border: 0; background: transparent; color: #85917d; cursor: pointer; font-size: 8px; font-weight: 500; }
 .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .calendar-weekdays { padding-bottom: 5px; border-bottom: 1px solid #f0f0ed; }
 .calendar-weekdays span { padding: 5px 0; color: #a0a19a; font-size: 8px; text-align: center; }
 .calendar-days { row-gap: 2px; padding-top: 5px; }
 .calendar-day { position: relative; display: flex; min-height: 27px; align-items: center; justify-content: center; color: #62645d; font-size: 9px; }
-.calendar-day.today > span { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: #74886b; color: #fff; }
+.calendar-day.today > .calendar-day-number { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: #74886b; color: #fff; }
 .calendar-day.out-of-month { pointer-events: none; }
 .deadline-marker { width: 4px; height: 4px; border-radius: 50%; background: #c68d61; }
-.calendar-day .deadline-marker { position: absolute; bottom: 2px; left: calc(50% + 5px); }
+.calendar-day .calendar-event-markers { position: absolute; bottom: 2px; display: flex; gap: 2px; }
+.calendar-day .calendar-event-markers .deadline-marker { position: static; }
+.deadline-marker.event-class { background: #7d9dc2; }
+.deadline-marker.event-task { background: #8c9a7f; }
+.deadline-marker.event-deliverable { background: #9a7db0; }
+.deadline-marker.event-exam { background: #c8766f; }
+.deadline-marker.event-prayer { background: #6e9a91; }
+.deadline-marker.event-freelance { background: #d0965b; }
+.deadline-marker.event-review { background: #9e8768; }
+.deadline-marker.event-routine { background: #a0a19a; }
 .calendar-legend { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: #9a9c95; font-size: 8px; }
 .calendar-today-key { width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: #74886b; }
 .upcoming-list { margin-top: 13px; padding-top: 10px; border-top: 1px solid #f0f0ed; }
 .upcoming-heading { margin-bottom: 5px; color: #9b9d96; font-size: 8px; font-weight: 700; letter-spacing: .7px; }
-.upcoming-item { display: grid; min-height: 25px; grid-template-columns: 39px minmax(0, 1fr) auto; align-items: center; gap: 6px; }
+.upcoming-item { display: grid; min-height: 25px; grid-template-columns: 70px minmax(0, 1fr) auto; align-items: center; gap: 6px; }
 .upcoming-date { color: #8b8d85; font-size: 8px; }
 .upcoming-task { overflow: hidden; color: #5e6059; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .upcoming-type { overflow: hidden; max-width: 72px; padding: 3px 5px; border-radius: 4px; background: #f2f3ef; color: #7f8279; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
@@ -280,6 +321,8 @@ button { color: inherit; }
 .task-filter-row > button[aria-selected="true"] { background: #eff3ec; color: #52684c; font-weight: 600; }
 .task-filter-row > button span { color: #a1a39b; font-size: 7px; }
 .task-filter-row select { max-width: 180px; height: 25px; padding: 0 7px; border: 1px solid #e8e9e4; border-radius: 5px; background: #fff; color: #666861; font-size: 8px; }
+.task-advanced-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 9px; }
+.task-advanced-filters select { max-width: 160px; height: 26px; padding: 0 7px; border: 1px solid #e8e9e4; border-radius: 5px; background: #fff; color: #666861; font-size: 8px; }
 .task-search { display: flex; min-width: 150px; height: 29px; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid #ebebe7; border-radius: 5px; color: #a0a19a; }
 .task-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: #555750; font-size: 9px; }
 .task-search input::placeholder { color: #a7a8a2; }
@@ -305,6 +348,15 @@ button { color: inherit; }
 .task-row-actions button:hover:not(:disabled) { border-color: #9ba991; color: #4d6148; }
 .task-row-actions button.delete-task:hover:not(:disabled) { border-color: #e4b6ae; color: #b75d50; }
 .task-row-actions button:disabled { cursor: not-allowed; opacity: .5; }
+.task-row-actions button[aria-expanded="true"] svg { transform: rotate(180deg); }
+.deliverable-check { color: #738b69; vertical-align: middle; }
+.task-details-row > td { padding: 11px 14px !important; background: #fafbf8; white-space: normal !important; }
+.task-details-grid { display: flex; flex-wrap: wrap; gap: 13px 20px; }
+.task-details-grid > div { display: grid; min-width: 90px; max-width: 240px; gap: 4px; }
+.task-details-grid > div > span { color: #999b94; font-size: 8px; }
+.task-details-grid > div > strong, .task-details-grid > div > a { color: #5d6058; font-size: 9px; font-weight: 500; overflow-wrap: anywhere; }
+.task-details-grid > .task-details-notes { min-width: 200px; flex: 1; }
+.task-details-notes strong { white-space: pre-wrap; }
 .task-subtitle { display: block; overflow: hidden; margin: 3px 0 0 22px; color: #a1a29c; font-size: 8px; text-overflow: ellipsis; }
 .course-code-pill { display: inline-block; padding: 3px 6px; border-radius: 4px; background: #edf2f8; color: #59789b; font-size: 8px; white-space: nowrap; }
 .assessment-pill { background: #f0eaf5; color: #826899; }
@@ -365,6 +417,8 @@ button { color: inherit; }
 .create-field > span i { color: #b87667; font-style: normal; }
 .create-field input, .create-field select, .create-field textarea { width: 100%; min-width: 0; min-height: 35px; padding: 7px 9px; border: 1px solid #e6e7e1; border-radius: 6px; outline: none; background: #fff; color: #51534d; font-size: 10px; }
 .create-field textarea { resize: vertical; line-height: 1.5; }
+.create-checkbox-field { grid-template-columns: 1fr auto; align-items: center; padding: 7px 0; }
+.create-checkbox-field input { width: 15px; min-height: 15px; accent-color: #74886c; }
 .create-field input:focus, .create-field select:focus, .create-field textarea:focus { border-color: #96a58d; box-shadow: 0 0 0 3px #758a6c18; }
 .create-field input::placeholder, .create-field textarea::placeholder { color: #a5a69f; }
 .create-fields-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -463,15 +517,20 @@ button { color: inherit; }
   .metric-value { font-size: 23px; }
   .metric-note, .metric-trend { font-size: 8px; }
   .charts-grid { grid-template-columns: minmax(0, 1fr); }
+  .progress-details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .chart-panel { min-height: 203px; padding: 14px; }
   .status-chart-row { height: 148px; }
   .content-grid { gap: 10px; }
   .assistant-controls { align-items: stretch; flex-direction: column; }
+  .assistant-planning-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .assistant-suggest { align-self: flex-start; }
   .calendar-panel, .areas-panel { padding: 14px 13px; }
   .task-table { min-width: 710px; }
   .task-search { min-width: 125px; }
   .task-actions { gap: 5px; }
+  .task-view-toggle button { padding-inline: 5px; }
+  .task-advanced-filters { gap: 5px; }
+  .task-advanced-filters select { max-width: 130px; }
   .create-item-button { padding-inline: 7px; }
   .task-panel { padding-inline: 11px; }
   .task-panel-heading { align-items: flex-start; }
@@ -486,6 +545,7 @@ button { color: inherit; }
   .task-search { min-width: 105px; }
   .create-form { padding: 17px; }
   .create-fields-grid { gap: 9px; }
+  .progress-details-grid { grid-template-columns: minmax(0, 1fr); }
   .section-heading { align-items: flex-start; }
   .live-label { max-width: 100px; line-height: 1.35; }
 }

@@ -4,6 +4,12 @@ import { CalendarDays, Check, Clock3, LoaderCircle, Scissors, Send, Sparkles, X 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { BreakdownPlan, DayPlan, PlannerPlan, PlannerChange, ScheduleBlock } from "@/lib/gemini";
 import type { Task, TaskOptions } from "@/lib/types";
+import {
+  formatPlannerDate,
+  plannerLocalTimeToIso,
+  PLANNER_TIME_ZONE,
+  todayInPlannerTimeZone,
+} from "@/lib/planner-datetime";
 
 type AssistantResponse = { answer?: string; plan?: PlannerPlan | BreakdownPlan | DayPlan; error?: string };
 type TaskMutationResponse = { ok: boolean; task?: Task; error?: string };
@@ -35,19 +41,6 @@ function InlineMarkdown({ text }: { text: string }) {
       ? <strong key={index}>{part.slice(2, -2)}</strong>
       : part,
   );
-}
-
-function localDateTimeValue(value: Date): string {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  const hour = String(value.getHours()).padStart(2, "0");
-  const minute = String(value.getMinutes()).padStart(2, "0");
-  const offset = -value.getTimezoneOffset();
-  const sign = offset < 0 ? "-" : "+";
-  const offsetHours = String(Math.floor(Math.abs(offset) / 60)).padStart(2, "0");
-  const offsetMinutes = String(Math.abs(offset) % 60).padStart(2, "0");
-  return `${year}-${month}-${day}T${hour}:${minute}:00${sign}${offsetHours}:${offsetMinutes}`;
 }
 
 function AssistantMarkdown({ text }: { text: string }) {
@@ -108,6 +101,14 @@ export function PlannerAssistant({
   const [dayPlan, setDayPlan] = useState<DayPlan | null>(null);
   const [plannedTasks, setPlannedTasks] = useState<PlannedTask[]>([]);
   const [loading, setLoading] = useState(false);
+  const [planningDate, setPlanningDate] = useState(todayInPlannerTimeZone());
+  const [availableHours, setAvailableHours] = useState(6);
+  const [studyStart, setStudyStart] = useState("08:30");
+  const [studyEnd, setStudyEnd] = useState("18:00");
+  const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
+  const [selectedCourses, setSelectedCourses] = useState<string[]>([]);
+  const [energyLevel, setEnergyLevel] = useState<"low" | "medium" | "high">("medium");
+  const [planningInstructions, setPlanningInstructions] = useState("");
 
   const ask = useCallback(async (mode: AssistantMode, prompt = question, taskId?: string) => {
     setLoading(true);
@@ -118,8 +119,8 @@ export function PlannerAssistant({
     setDayPlan(null);
     setPlannedTasks([]);
     try {
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const date = new Date().toLocaleDateString("en-CA");
+      const timezone = PLANNER_TIME_ZONE;
+      const date = mode === "day" ? planningDate : todayInPlannerTimeZone();
       const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -128,6 +129,17 @@ export function PlannerAssistant({
           question: prompt,
           ...(taskId ? { taskId } : {}),
           ...(mode === "day" || mode === "plan" ? { date, timezone } : {}),
+          ...(mode === "day" ? {
+            planning: {
+              availableHours,
+              studyStart,
+              studyEnd,
+              selectedAreas,
+              selectedCourses,
+              energyLevel,
+              instructions: planningInstructions,
+            },
+          } : {}),
         }),
       });
       const result = await response.json() as AssistantResponse;
@@ -169,7 +181,7 @@ export function PlannerAssistant({
     } finally {
       setLoading(false);
     }
-  }, [options, question, tasks]);
+  }, [availableHours, energyLevel, options, planningDate, planningInstructions, question, selectedAreas, selectedCourses, studyEnd, studyStart, tasks]);
 
   function submitInstruction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -200,7 +212,7 @@ export function PlannerAssistant({
       status: makeChoice(linkedTask?.status, taskOptions?.statuses ?? [], "Planned"),
       course: linkedTask?.course || undefined,
       nextAction: `Scheduled ${block.startTime}–${block.endTime} (${plan.timezone}). ${block.nextAction}`,
-      dueDate: localDateTimeValue(new Date(`${plan.date}T${block.startTime}:00`)),
+      dueDate: plannerLocalTimeToIso(plan.date, block.startTime),
       checked: true,
     };
   }
@@ -232,7 +244,7 @@ export function PlannerAssistant({
     try {
       const fields = pendingChange.fields;
       const dueDate = fields.dueDate && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(fields.dueDate)
-        ? localDateTimeValue(new Date(fields.dueDate))
+        ? plannerLocalTimeToIso(fields.dueDate.slice(0, 10), fields.dueDate.slice(11, 16))
         : fields.dueDate;
       const body = pendingChange.action === "create"
         ? { ...fields, dueDate }
@@ -244,6 +256,7 @@ export function PlannerAssistant({
             area: fields.area ?? task!.area,
             course: fields.course ?? task!.course,
             dueDate: dueDate ?? task!.dueDate ?? "",
+            dateEnd: task!.dateEnd ?? "",
             nextAction: fields.nextAction ?? task!.nextAction,
           };
       const response = await fetch(
@@ -325,6 +338,20 @@ export function PlannerAssistant({
         </div>
         <span className="chart-heading-icon tone-violet"><Sparkles size={15} /></span>
       </div>
+      <details className="assistant-planning-preferences">
+        <summary>Daily planning preferences</summary>
+        <div className="assistant-planning-grid">
+          <label><span>Planning date</span><input type="date" value={planningDate} onChange={(event) => setPlanningDate(event.target.value)} /></label>
+          <label><span>Available work hours</span><input type="number" min="0.5" max="12" step="0.5" value={availableHours} onChange={(event) => setAvailableHours(Number(event.target.value))} /></label>
+          <label><span>Study window starts</span><input type="time" min="08:30" max="17:45" value={studyStart} onChange={(event) => setStudyStart(event.target.value)} /></label>
+          <label><span>Study window ends</span><input type="time" min="08:45" max="18:00" value={studyEnd} onChange={(event) => setStudyEnd(event.target.value)} /></label>
+          <label><span>Energy level</span><select value={energyLevel} onChange={(event) => setEnergyLevel(event.target.value as "low" | "medium" | "high")}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+          <label><span>Areas (optional)</span><select multiple value={selectedAreas} onChange={(event) => setSelectedAreas(Array.from(event.target.selectedOptions, (option) => option.value))}>{(options?.areas ?? []).map((area) => <option value={area} key={area}>{area}</option>)}</select></label>
+          <label><span>Courses (optional)</span><select multiple value={selectedCourses} onChange={(event) => setSelectedCourses(Array.from(event.target.selectedOptions, (option) => option.value))}>{(options?.courses ?? []).map((course) => <option value={course} key={course}>{course}</option>)}</select></label>
+          <label className="assistant-planning-instructions"><span>Additional instructions</span><textarea maxLength={500} value={planningInstructions} onChange={(event) => setPlanningInstructions(event.target.value)} placeholder="Anything else the schedule should account for?" /></label>
+        </div>
+        <p>Calendar dates and study hours use {PLANNER_TIME_ZONE}.</p>
+      </details>
       <div className="assistant-quick-actions">
         {quickActions.map(({ id, label, icon: Icon }) => (
           <button type="button" key={id} onClick={() => runQuickAction(id)} disabled={disabled || loading || Boolean(pendingChange) || Boolean(plannedTasks.length)}>
@@ -360,7 +387,7 @@ export function PlannerAssistant({
               const key = field as ChangeField;
               const previousValue = pendingTask && key !== "dueDate" ? pendingTask[key] : pendingTask?.dueDate;
               const dateLabel = (date: string) => date.includes("T")
-                ? new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(date))
+                ? formatPlannerDate(date, { dateStyle: "medium" })
                 : date;
               const displayedValue = value === "" ? "Clear this value" : key === "dueDate" ? dateLabel(value) : value;
               return (

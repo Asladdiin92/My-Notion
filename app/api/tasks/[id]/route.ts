@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { hasPlannerAccess } from "@/lib/access";
-import { archiveNotionTask, updateNotionTask } from "@/lib/notion";
+import { archiveNotionTask, setNotionTaskCompleted, updateNotionTask } from "@/lib/notion";
 import { isSameOrigin, parseTaskInput } from "@/lib/task-request";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +50,28 @@ export async function DELETE(request: Request, { params }: RouteContext) {
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not archive the planner item.";
+    return NextResponse.json({ ok: false, error: message }, { status: errorStatus(message), headers: { "Cache-Control": "no-store" } });
+  }
+}
+
+export async function POST(request: Request, { params }: RouteContext) {
+  if (!await hasPlannerAccess()) {
+    return NextResponse.json({ ok: false, error: "You are not authorized to modify this planner." }, { status: 403 });
+  }
+  if (!isSameOrigin(request)) {
+    return NextResponse.json({ ok: false, error: "This request must come from the dashboard." }, { status: 403 });
+  }
+  try {
+    const body: unknown = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body) ||
+        typeof (body as Record<string, unknown>).completed !== "boolean") {
+      return NextResponse.json({ ok: false, error: "Choose whether the item is completed." }, { status: 400 });
+    }
+    const { id } = await params;
+    const task = await setNotionTaskCompleted(id, (body as { completed: boolean }).completed);
+    return NextResponse.json({ ok: true, task }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not update task completion.";
     return NextResponse.json({ ok: false, error: message }, { status: errorStatus(message), headers: { "Cache-Control": "no-store" } });
   }
 }

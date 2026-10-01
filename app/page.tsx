@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
+  ChevronDown,
   Clock3,
   Columns3,
   ExternalLink,
@@ -29,7 +30,7 @@ import {
   Target,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
   PriorityChart,
@@ -39,30 +40,19 @@ import {
 } from "@/components/dashboard-charts";
 import { PlannerAssistant } from "@/components/planner-assistant";
 import type { Task, TaskOptions, TasksResponse } from "@/lib/types";
+import {
+  formatPlannerDate as formatDate,
+  plannerDateKey,
+  plannerDateTimeInput as dateTimeLocalValue,
+  plannerLocalTimeToIso,
+  PLANNER_TIME_ZONE,
+  todayInPlannerTimeZone,
+} from "@/lib/planner-datetime";
 
 type LoadState = "loading" | "ready" | "error";
 type TaskMutationResponse = { ok: boolean; task?: Task; error?: string };
 
-const isoToday = () => {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
-
-function formatDate(value: string, options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }) {
-  const hasTime = value.includes("T");
-  const formatOptions = hasTime
-    ? { ...options, hour: "numeric" as const, minute: "2-digit" as const }
-    : options;
-  const date = hasTime ? new Date(value) : new Date(`${value.slice(0, 10)}T12:00:00`);
-  return new Intl.DateTimeFormat("en", formatOptions).format(date);
-}
-
-function dateTimeLocalValue(value: string) {
-  if (!value.includes("T")) return `${value.slice(0, 10)}T00:00`;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value.slice(0, 16);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-}
+const isoToday = todayInPlannerTimeZone;
 
 function countBy(tasks: Task[], select: (task: Task) => string) {
   const counts = new Map<string, number>();
@@ -73,22 +63,37 @@ function countBy(tasks: Task[], select: (task: Task) => string) {
   return Array.from(counts, ([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
 }
 
+function supportsSemester(options: TaskOptions | null): options is TaskOptions {
+  return Boolean(options?.availableFields.includes("semester"));
+}
+
+function safeHttpUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function getTimeline(tasks: Task[]) {
   const now = new Date();
-  const months = Array.from({ length: 6 }, (_, index) => new Date(now.getFullYear(), now.getMonth() - 5 + index, 1));
+  const [year, month] = todayInPlannerTimeZone(now).split("-").map(Number);
+  const months = Array.from({ length: 6 }, (_, index) => new Date(Date.UTC(year, month - 6 + index, 15)));
   const counts = months.map((month) => {
-    const key = `${month.getFullYear()}-${month.getMonth()}`;
+    const key = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`;
     const count = tasks.filter((task) => {
-      const created = new Date(task.createdAt);
-      return `${created.getFullYear()}-${created.getMonth()}` === key;
+      return plannerDateKey(task.createdAt).slice(0, 7) === key;
     }).length;
-    return { month: new Intl.DateTimeFormat("en", { month: "short" }).format(month), count };
+    return { month: new Intl.DateTimeFormat("en", { month: "short", timeZone: PLANNER_TIME_ZONE }).format(month), count };
   });
   return counts;
 }
 
 function isOverdue(task: Task, today: string) {
-  return !task.completed && Boolean(task.dueDate) && task.dueDate!.slice(0, 10) < today;
+  const deadline = task.dateEnd || task.dueDate;
+  return !task.completed && Boolean(deadline) && plannerDateKey(deadline!) < today;
 }
 
 function Sidebar({ onClose }: { onClose?: () => void }) {
@@ -162,6 +167,7 @@ function TaskDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const hasChoices = options.types.length > 0 && options.statuses.length > 0;
+  const supports = (field: string) => options.availableFields.includes(field);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -181,14 +187,29 @@ function TaskDialog({
     const dueDate = String(values.dueDate ?? "");
     const dueTime = String(values.dueTime ?? "");
     const localDueDate = dueDate && dueTime
-      ? new Date(`${dueDate}T${dueTime}`).toISOString()
+      ? plannerLocalTimeToIso(dueDate, dueTime)
       : dueDate;
+    const dateEnd = String(values.dateEnd ?? "");
+    const dateEndTime = String(values.dateEndTime ?? "");
+    const localDateEnd = dateEnd && dateEndTime
+      ? plannerLocalTimeToIso(dateEnd, dateEndTime)
+      : dateEnd;
+    const nextReviewDate = String(values.nextReviewDate ?? "");
+    const nextReviewTime = String(values.nextReviewTime ?? "");
+    const localNextReviewDate = nextReviewDate && nextReviewTime
+      ? plannerLocalTimeToIso(nextReviewDate, nextReviewTime)
+      : nextReviewDate;
     const estimatedHours = String(values.estimatedHours ?? "");
-    const taskValues = Object.fromEntries(Object.entries(values).filter(([name]) => name !== "dueTime"));
+    const taskValues = Object.fromEntries(Object.entries(values).filter(([name]) => !["dueTime", "dateEndTime", "nextReviewTime"].includes(name)));
     const body = {
       ...taskValues,
       dueDate: localDueDate,
+      dateEnd: localDateEnd,
+      nextReviewDate: localNextReviewDate,
       estimatedHours: estimatedHours === "" ? null : Number(estimatedHours),
+      actualHours: values.actualHours === "" ? null : values.actualHours === undefined ? undefined : Number(values.actualHours),
+      creditHours: values.creditHours === "" ? null : values.creditHours === undefined ? undefined : Number(values.creditHours),
+      ...(supports("deliverable") ? { deliverable: values.deliverable === "on" } : {}),
     };
 
     try {
@@ -243,16 +264,38 @@ function TaskDialog({
           {choiceField("priority", "Priority", options.priorities, "Medium", false, "Use default")}
           {choiceField("area", "Area", options.areas)}
           {choiceField("course", "Course", options.courses)}
-          {choiceField("assessment", "Assessment", options.assessments)}
-          <label className="create-field"><span>Course code</span><input name="courseCode" defaultValue={task?.courseCode ?? ""} maxLength={2000} placeholder="e.g. ITeC4133" /></label>
-          <label className="create-field"><span>Estimated hours</span><input name="estimatedHours" type="number" min="0" max="10000" step="0.25" defaultValue={task?.estimatedHours ?? ""} /></label>
+          {supports("assessment") && choiceField("assessment", "Assessment", options.assessments)}
+          {supports("courseCode") && <label className="create-field"><span>Course code</span><input name="courseCode" defaultValue={task?.courseCode ?? ""} maxLength={50} placeholder="e.g. ITeC4133" /></label>}
+          {supports("estimatedHours") && <label className="create-field"><span>Estimated hours</span><input name="estimatedHours" type="number" min="0" max="10000" step="0.25" defaultValue={task?.estimatedHours ?? ""} /></label>}
+          {supports("actualHours") && <label className="create-field"><span>Actual hours</span><input name="actualHours" type="number" min="0" max="10000" step="0.25" defaultValue={task?.actualHours ?? ""} /></label>}
+          {supports("creditHours") && <label className="create-field"><span>Course credits</span><input name="creditHours" type="number" min="0" max="10000" step="0.5" defaultValue={task?.creditHours ?? ""} /></label>}
           <label className="create-field"><span>Due date</span><input name="dueDate" type="date" defaultValue={task?.dueDate?.slice(0, 10) ?? ""} /></label>
           <label className="create-field"><span>Due time</span><input name="dueTime" type="time" defaultValue={task?.dueDate?.includes("T") ? dateTimeLocalValue(task.dueDate).slice(11, 16) : ""} /></label>
+          {supports("dateEnd") && <>
+            <label className="create-field"><span>End date</span><input name="dateEnd" type="date" defaultValue={task?.dateEnd?.slice(0, 10) ?? ""} /></label>
+            <label className="create-field"><span>End time</span><input name="dateEndTime" type="time" defaultValue={task?.dateEnd?.includes("T") ? dateTimeLocalValue(task.dateEnd).slice(11, 16) : ""} /></label>
+          </>}
+          {supports("semester") && choiceField("semester", "Semester", options.semesters)}
+          {supports("nextReviewDate") && <>
+            <label className="create-field"><span>Next review date</span><input name="nextReviewDate" type="date" defaultValue={task?.nextReviewDate?.slice(0, 10) ?? ""} /></label>
+            <label className="create-field"><span>Next review time</span><input name="nextReviewTime" type="time" defaultValue={task?.nextReviewDate?.includes("T") ? dateTimeLocalValue(task.nextReviewDate).slice(11, 16) : ""} /></label>
+          </>}
+          {supports("instructor") && <label className="create-field"><span>Instructor / responsible</span><input name="instructor" defaultValue={task?.instructor ?? ""} maxLength={255} /></label>}
+          {supports("marksGrade") && <label className="create-field"><span>Marks / grade</span><input name="marksGrade" defaultValue={task?.marksGrade ?? ""} maxLength={100} /></label>}
+          {supports("recurrence") && <label className="create-field"><span>Recurrence</span><input name="recurrence" defaultValue={task?.recurrence ?? ""} maxLength={255} placeholder="e.g. Weekly, weekdays" /></label>}
+          {supports("timeBlock") && <label className="create-field"><span>Time block</span><input name="timeBlock" defaultValue={task?.timeBlock ?? ""} maxLength={255} /></label>}
+          {supports("resourceLink") && <label className="create-field"><span>Resource link</span><input name="resourceLink" defaultValue={task?.resourceLink ?? ""} maxLength={2000} /></label>}
+          {supports("venueLink") && <label className="create-field"><span>Venue / meeting link</span><input name="venueLink" defaultValue={task?.venueLink ?? ""} maxLength={255} /></label>}
+          {supports("deliverable") && <label className="create-field create-checkbox-field"><span>Deliverable</span><input name="deliverable" type="checkbox" defaultChecked={task?.deliverable ?? false} /></label>}
         </div>
         <label className="create-field next-action-field">
           <span>Next action</span>
           <textarea name="nextAction" defaultValue={task?.nextAction ?? ""} maxLength={2000} rows={2} placeholder="What is the next concrete step?" />
         </label>
+        {supports("notes") && <label className="create-field next-action-field">
+          <span>Notes</span>
+          <textarea name="notes" defaultValue={task?.notes ?? ""} maxLength={2000} rows={3} placeholder="Context, reflection, or technical notes" />
+        </label>}
         {!hasChoices && <p className="create-form-notice">Type and Status options could not be loaded. Check that these properties exist in your Notion database.</p>}
         {error && <p className="create-form-error" role="alert">{error}</p>}
         <div className="create-dialog-actions">
@@ -266,11 +309,29 @@ function TaskDialog({
   );
 }
 
-function CalendarCard({ tasks }: { tasks: Task[] }) {
+function CalendarCard({ tasks, options }: { tasks: Task[]; options: TaskOptions | null }) {
   const [visibleMonth, setVisibleMonth] = useState(() => {
-    const today = new Date();
-    return new Date(today.getFullYear(), today.getMonth(), 1);
+    const [year, month] = isoToday().split("-").map(Number);
+    return new Date(year, month - 1, 1);
   });
+  const [calendarType, setCalendarType] = useState("");
+  const [calendarArea, setCalendarArea] = useState("");
+  const [calendarCourse, setCalendarCourse] = useState("");
+  const [calendarStatus, setCalendarStatus] = useState("");
+  const [calendarPriority, setCalendarPriority] = useState("");
+  const [calendarSemester, setCalendarSemester] = useState("");
+  const [rangeStart, setRangeStart] = useState("");
+  const [rangeEnd, setRangeEnd] = useState("");
+  const calendarTasks = tasks.filter((task) =>
+    (!calendarType || task.type === calendarType) &&
+    (!calendarArea || task.area === calendarArea) &&
+    (!calendarCourse || task.course === calendarCourse) &&
+    (!calendarStatus || (task.completed ? "Done" : task.status) === calendarStatus) &&
+    (!calendarPriority || task.priority === calendarPriority) &&
+    (!calendarSemester || task.semester === calendarSemester) &&
+    (!rangeStart || !task.dueDate || (task.dateEnd ? plannerDateKey(task.dateEnd) : plannerDateKey(task.dueDate)) >= rangeStart) &&
+    (!rangeEnd || !task.dueDate || plannerDateKey(task.dueDate) <= rangeEnd)
+  );
   const firstWeekday = (visibleMonth.getDay() + 6) % 7;
   const monthLength = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0).getDate();
   const cells = Array.from({ length: Math.ceil((firstWeekday + monthLength) / 7) * 7 }, (_, index) => {
@@ -278,12 +339,21 @@ function CalendarCard({ tasks }: { tasks: Task[] }) {
     return day > 0 && day <= monthLength ? day : null;
   });
   const deadlines = new Map<string, Task[]>();
-  tasks.forEach((task) => {
+  const monthFirst = `${visibleMonth.getFullYear()}-${String(visibleMonth.getMonth() + 1).padStart(2, "0")}-01`;
+  const monthLast = `${visibleMonth.getFullYear()}-${String(visibleMonth.getMonth() + 1).padStart(2, "0")}-${String(monthLength).padStart(2, "0")}`;
+  calendarTasks.forEach((task) => {
     if (!task.dueDate) return;
-    const day = task.dueDate.slice(0, 10);
-    deadlines.set(day, [...(deadlines.get(day) ?? []), task]);
+    const start = plannerDateKey(task.dueDate);
+    const end = task.dateEnd ? plannerDateKey(task.dateEnd) : start;
+    const clippedStart = start < monthFirst ? monthFirst : start;
+    const clippedEnd = end > monthLast ? monthLast : end;
+    for (let date = new Date(`${clippedStart}T00:00:00Z`), last = new Date(`${clippedEnd}T00:00:00Z`);
+      date <= last; date.setUTCDate(date.getUTCDate() + 1)) {
+      const day = date.toISOString().slice(0, 10);
+      deadlines.set(day, [...(deadlines.get(day) ?? []), task]);
+    }
   });
-  const monthLabel = new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(visibleMonth);
+  const monthLabel = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: PLANNER_TIME_ZONE }).format(visibleMonth);
   const today = isoToday();
 
   return (
@@ -294,8 +364,18 @@ function CalendarCard({ tasks }: { tasks: Task[] }) {
           <button className="round-button" aria-label="Previous month" onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1))}><ChevronLeft size={16} /></button>
           <button className="round-button" aria-label="Next month" onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1))}><ChevronRight size={16} /></button>
         </div>
+        <div className="calendar-filters">
+          <label><span>From</span><input type="date" aria-label="Calendar start date" value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} /></label>
+          <label><span>To</span><input type="date" aria-label="Calendar end date" value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} /></label>
+          <select aria-label="Calendar type filter" value={calendarType} onChange={(event) => setCalendarType(event.target.value)}><option value="">All types</option>{(options?.types ?? []).map((value) => <option key={value}>{value}</option>)}</select>
+          <select aria-label="Calendar area filter" value={calendarArea} onChange={(event) => setCalendarArea(event.target.value)}><option value="">All areas</option>{(options?.areas ?? []).map((value) => <option key={value}>{value}</option>)}</select>
+          <select aria-label="Calendar course filter" value={calendarCourse} onChange={(event) => setCalendarCourse(event.target.value)}><option value="">All courses</option>{(options?.courses ?? []).map((value) => <option key={value}>{value}</option>)}</select>
+          <select aria-label="Calendar status filter" value={calendarStatus} onChange={(event) => setCalendarStatus(event.target.value)}><option value="">All statuses</option>{Array.from(new Set([...(options?.statuses ?? []), "Done"])).map((value) => <option key={value}>{value}</option>)}</select>
+          <select aria-label="Calendar priority filter" value={calendarPriority} onChange={(event) => setCalendarPriority(event.target.value)}><option value="">All priorities</option>{(options?.priorities ?? []).map((value) => <option key={value}>{value}</option>)}</select>
+          {supportsSemester(options) && <select aria-label="Calendar semester filter" value={calendarSemester} onChange={(event) => setCalendarSemester(event.target.value)}><option value="">All semesters</option>{options.semesters.map((value) => <option key={value}>{value}</option>)}</select>}
+        </div>
       </div>
-      <div className="calendar-month">{monthLabel}<span className="calendar-current">Jump to this month</span></div>
+      <div className="calendar-month">{monthLabel}<button type="button" className="calendar-current" onClick={() => setVisibleMonth(new Date(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 1))}>Jump to this month</button></div>
       <div className="calendar-grid calendar-weekdays">
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => <span key={day}>{day}</span>)}
       </div>
@@ -306,29 +386,31 @@ function CalendarCard({ tasks }: { tasks: Task[] }) {
           const dueTasks = deadlines.get(date) ?? [];
           return (
             <div className={`calendar-day${date === today ? " today" : ""}`} key={date} title={dueTasks.map((task) => task.title).join(", ")}>
-              <span>{day}</span>{dueTasks.length > 0 && <i className="deadline-marker" aria-label={`${dueTasks.length} deadline${dueTasks.length > 1 ? "s" : ""}`} />}
+              <span className="calendar-day-number">{day}</span>{dueTasks.length > 0 && <span className="calendar-event-markers" aria-label={`${dueTasks.length} planner item${dueTasks.length > 1 ? "s" : ""}`}>
+                {dueTasks.slice(0, 4).map((task) => <i className={`deadline-marker event-${task.type.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} key={task.id} />)}
+              </span>}
             </div>
           );
         })}
       </div>
-      <div className="calendar-legend"><span className="deadline-marker" /> Task deadline <span className="calendar-today-key" /> Today</div>
+      <div className="calendar-legend"><span className="deadline-marker event-class" /> Class <span className="deadline-marker event-deliverable" /> Deliverable <span className="deadline-marker event-exam" /> Exam <span className="deadline-marker event-prayer" /> Prayer <span className="calendar-today-key" /> Today</div>
       <div className="upcoming-list">
-        <div className="upcoming-heading">UPCOMING DEADLINES</div>
-        {tasks.filter((task) => task.dueDate && !task.completed && task.dueDate.slice(0, 10) >= today)
+        <div className="upcoming-heading">UPCOMING DELIVERABLES &amp; EXAMS</div>
+        {calendarTasks.filter((task) => task.dueDate && !task.completed && (task.deliverable || /deliverable|exam/i.test(task.type)) && plannerDateKey(task.dateEnd || task.dueDate) >= today)
           .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? "")).slice(0, 3).map((task) => (
             <div className="upcoming-item" key={task.id}>
-              <span className="upcoming-date">{formatDate(task.dueDate!)}</span>
+              <span className="upcoming-date">{formatDate(task.dueDate!)}{task.dateEnd ? ` – ${formatDate(task.dateEnd)}` : ""}</span>
               <span className="upcoming-task">{task.title}</span>
               <span className="upcoming-type">{task.type}</span>
             </div>
           ))}
-        {tasks.filter((task) => task.dueDate && !task.completed && task.dueDate.slice(0, 10) >= today).length === 0 && <p className="upcoming-empty">No upcoming deadlines. Enjoy the breathing room.</p>}
+        {calendarTasks.filter((task) => task.dueDate && !task.completed && (task.deliverable || /deliverable|exam/i.test(task.type)) && plannerDateKey(task.dateEnd || task.dueDate) >= today).length === 0 && <p className="upcoming-empty">No upcoming deliverables or exams.</p>}
       </div>
     </section>
   );
 }
 
-function TaskTable({ tasks, options, loading, search, onSearch, onCreate, onEdit, onDelete, onBreakdown, createDisabled, deleting }: {
+function TaskTable({ tasks, options, loading, search, onSearch, onCreate, onEdit, onDelete, onComplete, onBreakdown, createDisabled, deleting, completingId }: {
   tasks: Task[];
   options: TaskOptions | null;
   loading: boolean;
@@ -337,26 +419,49 @@ function TaskTable({ tasks, options, loading, search, onSearch, onCreate, onEdit
   onCreate: () => void;
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => void;
+  onComplete: (task: Task) => void;
   onBreakdown: (task: Task) => void;
   createDisabled: boolean;
   deleting: boolean;
+  completingId: string;
 }) {
   const [activeFilter, setActiveFilter] = useState<"all" | "deliverables" | "routines" | "course">("all");
   const [selectedCourse, setSelectedCourse] = useState("");
   const [view, setView] = useState<"table" | "board">("table");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [areaFilter, setAreaFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [courseFilter, setCourseFilter] = useState("");
+  const [semesterFilter, setSemesterFilter] = useState("");
+  const [sortBy, setSortBy] = useState<"date" | "priority" | "title">("date");
+  const [expandedTaskId, setExpandedTaskId] = useState("");
   const today = isoToday();
-  const searched = tasks.filter((task) => `${task.title} ${task.type} ${task.area} ${task.course} ${task.courseCode ?? ""} ${task.assessment ?? ""} ${task.status} ${task.priority}`.toLowerCase().includes(search.toLowerCase()));
+  const searched = tasks.filter((task) => `${task.title} ${task.type} ${task.area} ${task.course} ${task.courseCode ?? ""} ${task.assessment ?? ""} ${task.status} ${task.priority} ${task.nextAction} ${task.instructor ?? ""} ${task.marksGrade ?? ""} ${task.notes ?? ""}`.toLowerCase().includes(search.toLowerCase()));
   const isDeliverable = (task: Task) => /deliverable/i.test(task.type) || /lab|assignment|project/i.test(task.assessment ?? "");
   const isRoutine = (task: Task) => /routine|prayer/i.test(task.type);
-  const deliverableCount = searched.filter(isDeliverable).length;
+  const deliverableCount = searched.filter((task) => task.deliverable || isDeliverable(task)).length;
   const routineCount = searched.filter(isRoutine).length;
   const courseTasks = searched.filter((task) => Boolean(task.courseCode?.trim()));
   const courseCodes = Array.from(new Set(tasks.map((task) => task.courseCode?.trim()).filter((code): code is string => Boolean(code)))).sort();
   const filtered = searched.filter((task) => {
-    if (activeFilter === "deliverables") return isDeliverable(task);
-    if (activeFilter === "routines") return isRoutine(task);
-    if (activeFilter === "course") return Boolean(task.courseCode?.trim()) && (!selectedCourse || task.courseCode?.trim() === selectedCourse);
+    if (activeFilter === "deliverables" && !(task.deliverable || isDeliverable(task))) return false;
+    if (activeFilter === "routines" && !isRoutine(task)) return false;
+    if (activeFilter === "course" && (!task.courseCode?.trim() || (selectedCourse && task.courseCode?.trim() !== selectedCourse))) return false;
+    if (typeFilter && task.type !== typeFilter) return false;
+    if (areaFilter && task.area !== areaFilter) return false;
+    if (priorityFilter && task.priority !== priorityFilter) return false;
+    if (statusFilter && (task.completed ? "Done" : task.status) !== statusFilter) return false;
+    if (courseFilter && task.course !== courseFilter) return false;
+    if (semesterFilter && task.semester !== semesterFilter) return false;
     return true;
+  }).sort((a, b) => {
+    if (sortBy === "priority") {
+      const rank = (priority: string) => ({ Critical: 0, High: 1, Medium: 2, Low: 3 }[priority as "Critical" | "High" | "Medium" | "Low"] ?? 4);
+      return rank(a.priority) - rank(b.priority) || (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999");
+    }
+    if (sortBy === "title") return a.title.localeCompare(b.title);
+    return (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999");
   });
   const boardStatuses = Array.from(new Set([
     ...(options?.statuses ?? []).filter((status) => !/^(done|complete|completed|finished)$/i.test(status)),
@@ -366,7 +471,11 @@ function TaskTable({ tasks, options, loading, search, onSearch, onCreate, onEdit
 
   function renderActions(task: Task) {
     return <div className="task-row-actions">
+      <button type="button" aria-label={`${task.completed ? "Mark incomplete" : "Mark complete"}: ${task.title}`} title={task.completed ? "Mark as not complete" : "Mark complete"} onClick={() => onComplete(task)} disabled={deleting || completingId === task.id}>
+        {completingId === task.id ? <LoaderCircle size={13} className="spin" /> : <CheckCheck size={13} />}
+      </button>
       <button type="button" aria-label={`Break down ${task.title}`} title="Break this task into steps" onClick={() => onBreakdown(task)} disabled={deleting || task.completed || createDisabled}><Sparkles size={13} /></button>
+      <button type="button" aria-label={`${expandedTaskId === task.id ? "Hide" : "Show"} details for ${task.title}`} aria-expanded={expandedTaskId === task.id} title="Show all Notion fields" onClick={() => setExpandedTaskId(expandedTaskId === task.id ? "" : task.id)}><ChevronDown size={13} /></button>
       <button type="button" aria-label={`Edit ${task.title}`} title="Edit task" onClick={() => onEdit(task)} disabled={deleting}><Pencil size={13} /></button>
       <button type="button" className="delete-task" aria-label={`Archive ${task.title}`} title="Archive task" onClick={() => onDelete(task)} disabled={deleting}>
         {deleting ? <LoaderCircle size={13} className="spin" /> : <Trash2 size={13} />}
@@ -397,24 +506,53 @@ function TaskTable({ tasks, options, loading, search, onSearch, onCreate, onEdit
           {courseCodes.map((code) => <option value={code} key={code}>{code} ({tasks.filter((task) => task.courseCode?.trim() === code).length})</option>)}
         </select>}
       </div>
+      <div className="task-advanced-filters" aria-label="Task filters and sorting">
+        <select aria-label="Filter by type" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="">Every type</option>{(options?.types ?? []).map((value) => <option value={value} key={value}>{value}</option>)}</select>
+        <select aria-label="Filter by area" value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)}><option value="">Every area</option>{(options?.areas ?? []).map((value) => <option value={value} key={value}>{value}</option>)}</select>
+        <select aria-label="Filter by priority" value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}><option value="">Every priority</option>{(options?.priorities ?? []).map((value) => <option value={value} key={value}>{value}</option>)}</select>
+        <select aria-label="Filter by status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">Every status</option>{Array.from(new Set([...(options?.statuses ?? []), ...tasks.map((task) => task.completed ? "Done" : task.status)])).map((value) => <option value={value} key={value}>{value}</option>)}</select>
+        <select aria-label="Filter by course" value={courseFilter} onChange={(event) => setCourseFilter(event.target.value)}><option value="">Every course</option>{(options?.courses ?? []).map((value) => <option value={value} key={value}>{value}</option>)}</select>
+        {supportsSemester(options) && <select aria-label="Filter by semester" value={semesterFilter} onChange={(event) => setSemesterFilter(event.target.value)}><option value="">Every semester</option>{options.semesters.map((value) => <option value={value} key={value}>{value}</option>)}</select>}
+        <select aria-label="Sort tasks" value={sortBy} onChange={(event) => setSortBy(event.target.value as "date" | "priority" | "title")}><option value="date">Sort: date</option><option value="priority">Sort: priority</option><option value="title">Sort: title</option></select>
+      </div>
       {view === "table" ? <div className="task-table-scroll">
         <table className="task-table">
-          <thead><tr><th>Task</th><th>Course code</th><th>Assessment</th><th>Est.</th><th>Type</th><th>Area</th><th>Priority</th><th>Status</th><th>Next action</th><th>Due date</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Task</th><th>Type</th><th>Area</th><th>Course</th><th>Priority</th><th>Status</th><th>Next action</th><th>Date / time</th><th>Deliverable</th><th>Course code</th><th>Assessment</th><th>Est.</th><th>Actual</th><th>Actions</th></tr></thead>
           <tbody>
             {filtered.map((task) => (
-              <tr key={task.id}>
+              <Fragment key={task.id}>
+              <tr>
                 <td><div className="task-title-cell"><span className={`task-state ${task.completed ? "is-complete" : ""}`}>{task.completed && <Check size={11} />}</span><a href={task.url} target="_blank" rel="noreferrer">{task.title}<ExternalLink size={10} /></a></div>{task.course && <span className="task-subtitle">{task.course}</span>}</td>
-                <td>{task.courseCode ? <span className="course-code-pill">{task.courseCode}</span> : "—"}</td>
-                <td>{task.assessment ? <span className={`pill assessment-pill ${task.assessment.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{task.assessment}</span> : "—"}</td>
-                <td className="estimated-hours">{task.estimatedHours !== undefined ? <><Clock3 size={11} /> {task.estimatedHours}h</> : "—"}</td>
                 <td><span className={`pill type-pill ${task.type.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{task.type}</span></td>
                 <td><span className="area-value">{task.area}</span></td>
+                <td>{task.course || "—"}</td>
                 <td><span className={`pill priority-pill ${task.priority.toLowerCase()}`}>{task.priority}</span></td>
                 <td><span className={`pill status-pill ${task.completed ? "completed" : task.status.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{task.completed ? "Completed" : task.status}</span></td>
                 <td className="next-action" title={task.nextAction || undefined}>{task.nextAction || "—"}</td>
-                <td className={`due-date${isOverdue(task, today) ? " overdue" : ""}`}>{task.dueDate ? <>{isOverdue(task, today) && <CircleAlert size={12} />}{formatDate(task.dueDate)}</> : "—"}</td>
+                <td className={`due-date${isOverdue(task, today) ? " overdue" : ""}`}>{task.dueDate ? <>{isOverdue(task, today) && <CircleAlert size={12} />}{formatDate(task.dueDate)}{task.dateEnd ? ` – ${formatDate(task.dateEnd)}` : ""}</> : "—"}</td>
+                <td>{task.deliverable ? <Check size={12} className="deliverable-check" /> : "—"}</td>
+                <td>{task.courseCode ? <span className="course-code-pill">{task.courseCode}</span> : "—"}</td>
+                <td>{task.assessment ? <span className={`pill assessment-pill ${task.assessment.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{task.assessment}</span> : "—"}</td>
+                <td className="estimated-hours">{task.estimatedHours !== undefined ? <><Clock3 size={11} /> {task.estimatedHours}h</> : "—"}</td>
+                <td>{task.actualHours !== undefined ? `${task.actualHours}h` : "—"}</td>
                 <td>{renderActions(task)}</td>
               </tr>
+              {expandedTaskId === task.id && <tr className="task-details-row"><td colSpan={14}>
+                <div className="task-details-grid">
+                  {task.instructor && <div><span>Instructor</span><strong>{task.instructor}</strong></div>}
+                  {task.peopleInstructor?.length ? <div><span>People</span><strong>{task.peopleInstructor.join(", ")}</strong></div> : null}
+                  {task.creditHours !== undefined && <div><span>Credit hours</span><strong>{task.creditHours}</strong></div>}
+                  {task.marksGrade && <div><span>Marks / grade</span><strong>{task.marksGrade}</strong></div>}
+                  {task.nextReviewDate && <div><span>Next review</span><strong>{formatDate(task.nextReviewDate)}</strong></div>}
+                  {task.semester && <div><span>Semester</span><strong>{task.semester}</strong></div>}
+                  {task.recurrence && <div><span>Recurrence</span><strong>{task.recurrence}</strong></div>}
+                  {task.timeBlock && <div><span>Time block</span><strong>{task.timeBlock}</strong></div>}
+                  {task.resourceLink && <div><span>Resource</span>{safeHttpUrl(task.resourceLink) ? <a href={safeHttpUrl(task.resourceLink)} target="_blank" rel="noreferrer">Open link</a> : <strong>{task.resourceLink}</strong>}</div>}
+                  {task.venueLink && <div><span>Venue</span>{safeHttpUrl(task.venueLink) ? <a href={safeHttpUrl(task.venueLink)} target="_blank" rel="noreferrer">Open link</a> : <strong>{task.venueLink}</strong>}</div>}
+                  {task.notes && <div className="task-details-notes"><span>Notes</span><strong>{task.notes}</strong></div>}
+                </div>
+              </td></tr>}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -460,6 +598,7 @@ export default function DashboardPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [deletingTaskId, setDeletingTaskId] = useState("");
+  const [completingTaskId, setCompletingTaskId] = useState("");
   const [actionError, setActionError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [taskToBreakDown, setTaskToBreakDown] = useState<Task | null>(null);
@@ -474,7 +613,7 @@ export default function DashboardPage() {
       setTasks(result.tasks);
       setTaskOptions(result.options ?? null);
       setState("ready");
-      setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date()));
+      setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
     } catch (loadError) {
       setTasks([]);
       setState("error");
@@ -492,7 +631,7 @@ export default function DashboardPage() {
       : [task, ...current]);
     setCreateDialogOpen(false);
     setEditingTask(null);
-    setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date()));
+    setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
     setSuccessMessage(editingTask ? `“${task.title}” was updated.` : `“${task.title}” was added to your Notion planner.`);
   }
 
@@ -500,7 +639,7 @@ export default function DashboardPage() {
     setTasks((current) => current.some((item) => item.id === task.id)
       ? current.map((item) => item.id === task.id ? task : item)
       : [task, ...current]);
-    setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date()));
+    setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
   }
 
   const clearTaskToBreakDown = useCallback(() => setTaskToBreakDown(null), []);
@@ -514,12 +653,35 @@ export default function DashboardPage() {
       const result = await response.json() as { ok: boolean; error?: string };
       if (!response.ok || !result.ok) throw new Error(result.error ?? "Could not archive the planner item.");
       setTasks((current) => current.filter((item) => item.id !== task.id));
-      setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date()));
+      setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
       setSuccessMessage(`“${task.title}” was archived from your planner.`);
     } catch (deleteError) {
       setActionError(deleteError instanceof Error ? deleteError.message : "Could not archive the planner item.");
     } finally {
       setDeletingTaskId("");
+    }
+  }
+
+  async function handleTaskComplete(task: Task) {
+    setCompletingTaskId(task.id);
+    setActionError("");
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed: !task.completed }),
+      });
+      const result = await response.json() as TaskMutationResponse;
+      if (!response.ok || !result.ok || !result.task) {
+        throw new Error(result.error ?? "Could not update task completion.");
+      }
+      setTasks((current) => current.map((item) => item.id === task.id ? result.task! : item));
+      setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
+      setSuccessMessage(`“${task.title}” marked ${result.task.completed ? "complete" : "not complete"}.`);
+    } catch (completeError) {
+      setActionError(completeError instanceof Error ? completeError.message : "Could not update task completion.");
+    } finally {
+      setCompletingTaskId("");
     }
   }
 
@@ -543,7 +705,22 @@ export default function DashboardPage() {
       const areaTasks = tasks.filter((task) => (task.area.trim() || "Other") === area.name);
       const completed = areaTasks.filter((task) => task.completed).length;
       return { ...area, completed, percentage: areaTasks.length ? Math.round((completed / areaTasks.length) * 100) : 0 };
-    }).filter((area) => area.name !== "Unassigned").slice(0, 5);
+    }).filter((area) => area.name !== "Unassigned");
+  const typeProgress = countBy(tasks, (task) => task.type).map((type) => {
+    const group = tasks.filter((task) => task.type === type.name);
+    return {
+      name: type.name,
+      total: group.length,
+      completed: group.filter((task) => task.completed).length,
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+  const totalEstimatedHours = tasks.reduce((sum, task) => sum + (task.estimatedHours ?? 0), 0);
+  const totalActualHours = tasks.reduce((sum, task) => sum + (task.actualHours ?? 0), 0);
+  const deliverableTasks = tasks.filter((task) => task.deliverable || /deliverable/i.test(task.type));
+  const completedDeliverables = deliverableTasks.filter((task) => task.completed).length;
+  const overdueDeliverables = deliverableTasks.filter((task) => isOverdue(task, today)).length;
+  const upcomingReviews = tasks.filter((task) => task.nextReviewDate && plannerDateKey(task.nextReviewDate) >= today && !task.completed)
+    .sort((a, b) => (a.nextReviewDate ?? "").localeCompare(b.nextReviewDate ?? "")).slice(0, 4);
   const courseGroups = new Map<string, Task[]>();
   tasks.forEach((task) => {
     const code = task.courseCode?.trim();
@@ -564,7 +741,8 @@ export default function DashboardPage() {
   }).sort((a, b) => a.code.localeCompare(b.code));
   const courseWorkloadHours = tasks.filter((task) => !task.completed)
     .reduce((sum, task) => sum + (task.estimatedHours ?? 0), 0);
-  const greeting = new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(new Date());
+  const greeting = new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric", timeZone: PLANNER_TIME_ZONE }).format(new Date());
+  const hourInPlannerTimeZone = Number(new Intl.DateTimeFormat("en", { hour: "numeric", hourCycle: "h23", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
 
   if (!isLoaded) {
     return <main className="auth-page"><LoaderCircle size={20} className="spin" /><span>Checking your access…</span></main>;
@@ -598,7 +776,7 @@ export default function DashboardPage() {
 
         <div className="page-wrap">
           <section className="welcome-row">
-            <div><div className="date-line"><CalendarDays size={13} />{greeting}</div><h1>{new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening"}, Asladin <span aria-hidden="true">✳</span></h1><p>Your academic and life planner, at a glance.</p></div>
+            <div><div className="date-line"><CalendarDays size={13} />{greeting}</div><h1>{hourInPlannerTimeZone < 12 ? "Good morning" : hourInPlannerTimeZone < 18 ? "Good afternoon" : "Good evening"}, Asladin <span aria-hidden="true">✳</span></h1><p>Your academic and life planner, at a glance.</p></div>
             <a className="open-notion-button" href="https://www.notion.so" target="_blank" rel="noreferrer">Open Notion <ExternalLink size={13} /></a>
           </section>
 
@@ -621,13 +799,33 @@ export default function DashboardPage() {
             <article className="panel chart-panel"><div className="panel-heading"><div><h3>Task type</h3><p>How your tasks are categorized</p></div><span className="chart-heading-icon tone-violet"><Target size={15} /></span></div><TypeChart data={typeData} /></article>
             <article className="panel chart-panel timeline-panel"><div className="panel-heading"><div><h3>Task timeline</h3><p>Tasks created over the last 6 months</p></div><span className="chart-heading-icon tone-blue"><CalendarDays size={15} /></span></div><TimelineChart data={timelineData} /></article>
           </section>
+          <section className="progress-details-grid" aria-label="Detailed progress">
+            <article className="panel progress-detail-card">
+              <div className="panel-heading"><div><h3>Estimated vs. actual hours</h3><p>Total recorded workload</p></div><Clock3 size={15} className="panel-title-icon" /></div>
+              <div className="hours-comparison"><div><span>Estimated</span><strong>{totalEstimatedHours}h</strong></div><div><span>Actual</span><strong>{totalActualHours}h</strong></div></div>
+            </article>
+            <article className="panel progress-detail-card">
+              <div className="panel-heading"><div><h3>Progress by type</h3><p>Completed items by category</p></div><Target size={15} className="panel-title-icon" /></div>
+              <div className="type-progress-list">{typeProgress.map((type) => <div className="type-progress-row" key={type.name}><span>{type.name}</span><strong>{type.completed}/{type.total}</strong></div>)}</div>
+            </article>
+            <article className="panel progress-detail-card">
+              <div className="panel-heading"><div><h3>Deliverables</h3><p>Completion and overdue work</p></div><CheckCheck size={15} className="panel-title-icon" /></div>
+              <div className="deliverable-progress-metrics"><div><strong>{completedDeliverables}/{deliverableTasks.length}</strong><span>completed</span></div><div><strong className={overdueDeliverables ? "overdue-value" : ""}>{overdueDeliverables}</strong><span>overdue</span></div></div>
+            </article>
+            <article className="panel progress-detail-card">
+              <div className="panel-heading"><div><h3>Upcoming reviews</h3><p>Next scheduled review dates</p></div><CalendarDays size={15} className="panel-title-icon" /></div>
+              <div className="review-progress-list">{upcomingReviews.map((task) => <a href={task.url} target="_blank" rel="noreferrer" key={task.id}><time>{formatDate(task.nextReviewDate!)}</time><span>{task.title}</span></a>)}
+                {upcomingReviews.length === 0 && <p className="course-progress-empty">No upcoming reviews scheduled.</p>}
+              </div>
+            </article>
+          </section>
 
           <PlannerAssistant disabled={state !== "ready"} tasks={tasks} options={taskOptions}
             taskToBreakDown={taskToBreakDown} onBreakdownHandled={clearTaskToBreakDown}
             onTaskSaved={handleAssistantTaskSaved} />
 
           <div className="content-grid">
-            <CalendarCard tasks={tasks} />
+            <CalendarCard tasks={tasks} options={taskOptions} />
             <section className="panel areas-panel">
               <div className="panel-heading"><div><h2>Progress by area</h2><p>Completion across your focus areas</p></div><Target size={16} className="panel-title-icon" /></div>
               <div className="area-list">
@@ -659,12 +857,13 @@ export default function DashboardPage() {
           <TaskTable tasks={tasks} options={taskOptions} loading={state === "loading"} search={search} onSearch={setSearch}
             onCreate={() => { setEditingTask(null); setCreateDialogOpen(true); }}
             onEdit={(task) => { setCreateDialogOpen(false); setEditingTask(task); }}
+            onComplete={(task) => void handleTaskComplete(task)}
             onBreakdown={(task) => {
               setTaskToBreakDown(task);
               void document.getElementById("planner-assistant")?.scrollIntoView({ behavior: "smooth" });
             }}
             onDelete={(task) => void handleTaskDelete(task)}
-            createDisabled={state !== "ready" || !taskOptions} deleting={Boolean(deletingTaskId)} />
+            createDisabled={state !== "ready" || !taskOptions} deleting={Boolean(deletingTaskId)} completingId={completingTaskId} />
 
           <footer className="page-footer"><span>Made for a more focused day</span><span><i /> Connected securely to your Notion database <span className="footer-separator">·</span> {tasks.length} planner items</span></footer>
         </div>

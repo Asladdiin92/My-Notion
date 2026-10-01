@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { hasPlannerAccess } from "@/lib/access";
 import {
+  type DayPlanPreferences,
   getPlannerAssistantAnswer,
   getPlannerAssistantBreakdown,
   getPlannerAssistantDayPlan,
@@ -9,6 +10,7 @@ import {
 import { fetchNotionTaskOptions, fetchNotionTasks } from "@/lib/notion";
 import { convertPrayerTimesToTimezone, fetchHararPrayerTimes } from "@/lib/prayer-times";
 import { isSameOrigin } from "@/lib/task-request";
+import { PLANNER_TIME_ZONE } from "@/lib/planner-datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
   }
 
   const values = body as Record<string, unknown>;
-  if (Object.keys(values).some((key) => !["mode", "question", "date", "timezone", "taskId"].includes(key))) {
+  if (Object.keys(values).some((key) => !["mode", "question", "date", "timezone", "taskId", "planning"].includes(key))) {
     return NextResponse.json({ error: "The request contains an unsupported field." }, { status: 400 });
   }
   const modes = ["suggest", "ask", "plan", "breakdown", "day"];
@@ -73,6 +75,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Choose a valid time zone for your day plan." }, { status: 400 });
     }
   }
+  let dayPreferences: DayPlanPreferences = {
+    availableHours: 6,
+    studyStart: "08:30",
+    studyEnd: "18:00",
+    selectedAreas: [],
+    selectedCourses: [],
+    energyLevel: "medium",
+    instructions: "",
+  };
+  if (values.mode === "day") {
+    const planning = values.planning;
+    if (!planning || typeof planning !== "object" || Array.isArray(planning)) {
+      return NextResponse.json({ error: "Provide valid daily planning preferences." }, { status: 400 });
+    }
+    const fields = planning as Record<string, unknown>;
+    if (Object.keys(fields).some((key) => !["availableHours", "studyStart", "studyEnd", "selectedAreas", "selectedCourses", "energyLevel", "instructions"].includes(key)) ||
+        typeof fields.availableHours !== "number" || !Number.isFinite(fields.availableHours) ||
+        fields.availableHours < 0.5 || fields.availableHours > 12 ||
+        typeof fields.studyStart !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(fields.studyStart) ||
+        typeof fields.studyEnd !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(fields.studyEnd) ||
+        fields.studyStart < "08:30" || fields.studyEnd > "18:00" || fields.studyStart >= fields.studyEnd ||
+        !Array.isArray(fields.selectedAreas) || fields.selectedAreas.length > 20 ||
+        fields.selectedAreas.some((value) => typeof value !== "string" || value.length > 100) ||
+        !Array.isArray(fields.selectedCourses) || fields.selectedCourses.length > 30 ||
+        fields.selectedCourses.some((value) => typeof value !== "string" || value.length > 100) ||
+        !["low", "medium", "high"].includes(fields.energyLevel as string) ||
+        typeof fields.instructions !== "string" || fields.instructions.length > 500) {
+      return NextResponse.json({ error: "Check your available hours, work window, areas, courses, and instructions." }, { status: 400 });
+    }
+    dayPreferences = {
+      availableHours: fields.availableHours,
+      studyStart: fields.studyStart,
+      studyEnd: fields.studyEnd,
+      selectedAreas: fields.selectedAreas as string[],
+      selectedCourses: fields.selectedCourses as string[],
+      energyLevel: fields.energyLevel as DayPlanPreferences["energyLevel"],
+      instructions: fields.instructions,
+    };
+    if (values.timezone !== PLANNER_TIME_ZONE) {
+      return NextResponse.json({ error: `Daily planning currently uses ${PLANNER_TIME_ZONE}.` }, { status: 400 });
+    }
+  }
 
   try {
     const tasks = await fetchNotionTasks();
@@ -92,6 +136,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ plan }, { headers: { "Cache-Control": "no-store" } });
     }
     if (values.mode === "day") {
+      const options = await fetchNotionTaskOptions();
+      if (dayPreferences.selectedAreas.some((area) => !options.areas.includes(area)) ||
+          dayPreferences.selectedCourses.some((course) => !options.courses.includes(course))) {
+        return NextResponse.json({ error: "Choose areas and courses from your Notion database options." }, { status: 400 });
+      }
       const prayerData = await fetchHararPrayerTimes(values.date as string);
       const prayerTimes = convertPrayerTimesToTimezone(
         prayerData.date,
@@ -99,7 +148,7 @@ export async function POST(request: Request) {
         values.timezone as string,
         prayerData.times,
       );
-      const plan = await getPlannerAssistantDayPlan(tasks, values.date as string, values.timezone as string, prayerTimes);
+      const plan = await getPlannerAssistantDayPlan(tasks, values.date as string, values.timezone as string, prayerTimes, dayPreferences);
       return NextResponse.json({ plan }, { headers: { "Cache-Control": "no-store" } });
     }
     const answer = await getPlannerAssistantAnswer(values.mode as "suggest" | "ask", values.question as string | undefined, tasks);

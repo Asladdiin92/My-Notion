@@ -8,6 +8,13 @@ create, edit, and archive planner items in the same database.
 This guide explains how the application works, what each part is for, and how
 to run, extend, and deploy it.
 
+Notion remains the single source of truth. The proposed PostgreSQL tables and
+indexes are not created: Clerk handles authentication, the existing Notion
+People property supplies optional assignees, and AI plans stay temporary until
+their proposed tasks are confirmed. The application reads every database page
+through Notion pagination and maps optional columns only when the matching
+property exists. Missing optional columns are not fabricated or seeded.
+
 ## Contents
 
 - [How the project works](#how-the-project-works)
@@ -127,21 +134,44 @@ Notion returns pages with nested property structures. The mapping in
 | `course` | `Course` (select for creation; select or rich text for reading) | Secondary label below a task title. |
 | `courseCode` | `Course Code` (rich text) | Course-code filter and course progress grouping. |
 | `estimatedHours` | `Est.` (number) | Estimated workload in the task list and course progress. |
+| `actualHours` | `Actual` (number) | Actual workload and estimated-versus-actual progress. |
 | `assessment` | `Assessment` (select) | Assessment badge and deliverables filtering. |
+| `dateEnd` | `Date.end` (date range) | End of a Notion date range or event block. |
+| `deliverable` | `Deliverable` (checkbox) | Deliverable-only filtering, deadlines, and progress. If absent, Type `Deliverable` is used. |
+| `creditHours` | `Credit Hours` (number) | Course credit value. |
+| `instructor` | `Instructor` (rich text) | Instructor, client, or responsible person. |
+| `peopleInstructor` | `People / Instructor` (people) | Assigned Notion people, read-only in the dashboard. |
+| `marksGrade` | `Marks / Grade` (rich text) | Score, grade, or pending result. |
+| `nextReviewDate` | `Next Review Date` (date) | Upcoming spaced-review dates. |
+| `notes` | `Notes` (rich text) | Item context and technical notes. |
+| `recurrence` | `Recurrence` (rich text) | Recurrence description for routines and classes. |
+| `resourceLink` | `Resource Link` (URL or rich text) | Course, repository, or submission reference. |
+| `semester` | `Semester` (select) | Semester filter in the calendar. |
+| `timeBlock` | `Time Block` (rich text) | Recurring class, prayer, or work time. |
+| `venueLink` | `Venue Link` (URL or rich text) | Room, meeting place, or online link. |
 | `priority` | `Priority` (select) | Priority chart and task table badge. |
 | `nextAction` | `Next Action` (rich text) | Next-action column in the task table. |
 | `completed` | `Completed` (checkbox), or completion status | Completed versus pending totals. |
-| `createdAt` | Notion page creation time | Task timeline chart. |
+| `createdAt` / `updatedAt` | Notion page creation and last-edit timestamps | Task timeline and last-updated metadata. |
 
 These names are defaults based on the planner screenshot. If a property has a
 different name in your database, set the corresponding environment variable.
 The title property is also detected by its Notion title type if its name is
 different.
 
+The `Task` model also carries the original planner's optional metadata:
+`dateEnd`, `deliverable`, `actualHours`, `assessment`, `creditHours`,
+`instructor`, assigned Notion people, `marksGrade`, `nextReviewDate`, `notes`,
+`recurrence`, `resourceLink`, `semester`, `timeBlock`, and `venueLink`.
+Date/time display and form input use `Africa/Addis_Ababa`; timestamps are
+written as UTC instants and all-day dates remain date-only.
+
 ### 4. Create a planner item
 
-The **New item** button opens a form. Type, Status, Priority, Area, Course, and
-Assessment choices are fetched from your actual database schema; they are not hard-coded.
+The **New item** button opens a form. Type, Status, Priority, Area, Course,
+Assessment, and Semester choices are fetched from your actual database schema;
+they are not hard-coded. Optional controls appear when the matching Notion
+property exists and has a compatible type.
 If a required choice isn't provided, creation defaults to `Deliverable` (or
 `Task`, then the first Type option), `Planned` (or `Not started`, then the first
 Status option), and `Medium` (or `Normal`, `Low`, then the first Priority
@@ -161,11 +191,15 @@ When the form is submitted:
 
 The table's **Edit** action opens the form with current values; saving calls
 `PATCH /api/tasks/:id`, and blank optional fields clear their Notion values.
-Course Code, Est. (hours), Assessment, and a date/time can also be entered or
-edited when those properties exist in the database.
+Course Code, estimated/actual/credit hours, Assessment, date-time ranges,
+deliverable state, review date, and the other mapped metadata can also be
+entered or edited when those properties exist in the database. People assigned
+through Notion's People property are displayed but not reassigned by this form.
 **Delete** asks for confirmation and calls `DELETE /api/tasks/:id`, which
 archives the page in Notion rather than permanently deleting it. Archived items
 can be restored from Notion's trash.
+The check action writes the Completed checkbox and, when available, a matching
+Done/Planned status to Notion.
 
 ## Understanding the dashboard calculations
 
@@ -181,18 +215,25 @@ can be restored from Notion's trash.
   current month and the previous five months. This is when the page was
   created, not the planner due date.
 - **Deadline calendar:** shows the task due dates from the Notion Date
-  property. The upcoming list shows the next three non-completed tasks due
-  today or later.
+  property, including date ranges, with filters for date range, type, area,
+  course, status, priority, and semester. Event markers are color-coded by
+  class, deliverable, exam, prayer, freelance, review, and routine type. The
+  upcoming list shows the next three non-completed deliverables and exams.
 - **Overdue count:** counts tasks that are not completed and have a due date
   earlier than today's local date.
 - **Progress by area:** groups tasks by Area and displays
   `completed tasks / total tasks` and that area's completion percentage.
 - **Course progress:** groups items by Course Code and displays completed and
   pending counts plus the estimated hours remaining for each course.
+- **Detailed progress:** shows totals for estimated versus actual hours,
+  completion by Type, completed and overdue deliverables, and upcoming review
+  dates.
 - **Task filters and views:** category tabs filter all items, deliverables,
-  routines/prayers, or items with a course code. The course selector filters
-  by an individual code. Table and Board views show the full loaded result set;
-  the board groups items by Notion Status.
+  routines/prayers, or items with a course code. Additional filters cover
+  Type, Area, Priority, Status, and Course; sorting supports date, priority,
+  and title. Table and Board views show the full loaded result set; the board
+  groups items by Notion Status. Use the task details expander for remaining
+  metadata such as notes, instructors, recurrence, and links.
 - **Search and refresh:** task search filters the currently loaded tasks in the
   browser. **Refresh** makes fresh requests to the API and Notion.
 
@@ -342,12 +383,19 @@ npm run start  # Serve a completed production build
    NOTION_COURSE_CODE_PROPERTY=Course Code
    NOTION_ESTIMATED_HOURS_PROPERTY=Est.
    NOTION_ASSESSMENT_PROPERTY=Assessment
+   NOTION_ACTUAL_HOURS_PROPERTY=Actual
+   NOTION_DELIVERABLE_PROPERTY=Deliverable
+   NOTION_NEXT_REVIEW_DATE_PROPERTY=Next Review Date
+   NOTION_SEMESTER_PROPERTY=Semester
    ```
 
 Only set an override when a property name is different. The form supports the
 database's select/status option properties, date property, rich-text Course
 Code and Next action properties, and numeric Est. property. If your database
 uses a different type for a field, adapt the corresponding mapping in `lib/notion.ts`.
+The main dashboard still uses in-page navigation for its Overview, Tasks,
+Calendar, Progress, and AI planner sections; the PostgreSQL-specific
+`app_users`, sync-state, and AI-plan tables are intentionally not used.
 
 ## Deploy to Vercel
 

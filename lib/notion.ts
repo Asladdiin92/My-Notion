@@ -10,18 +10,20 @@ type NotionValue = {
   select?: { name?: string } | null;
   status?: { name?: string } | null;
   multi_select?: Array<{ name?: string }>;
-  date?: { start?: string } | null;
+  date?: { start?: string; end?: string | null } | null;
   checkbox?: boolean;
   url?: string | null;
   email?: string | null;
   phone_number?: string | null;
   number?: number | null;
+  people?: Array<{ id?: string; name?: string }>;
 };
 
 type NotionPage = {
   id: string;
   url: string;
   created_time: string;
+  last_edited_time?: string;
   properties: Record<string, NotionValue>;
 };
 
@@ -40,6 +42,8 @@ type NotionPropertySchema = {
   number?: Record<string, never>;
   date?: Record<string, never>;
   checkbox?: Record<string, never>;
+  url?: Record<string, never>;
+  people?: Record<string, never>;
 };
 
 type NotionDatabase = {
@@ -55,8 +59,21 @@ export type CreateTaskInput = {
   course?: string;
   courseCode?: string;
   estimatedHours?: number | null;
+  actualHours?: number | null;
   assessment?: string;
+  creditHours?: number | null;
+  instructor?: string;
+  marksGrade?: string;
+  nextReviewDate?: string;
+  notes?: string;
+  recurrence?: string;
+  resourceLink?: string;
+  semester?: string;
+  timeBlock?: string;
+  venueLink?: string;
   dueDate?: string;
+  dateEnd?: string;
+  deliverable?: boolean;
   nextAction?: string;
 };
 
@@ -131,6 +148,25 @@ function optionsFor(
 
 export async function fetchNotionTaskOptions() {
   const { properties } = await fetchDatabase();
+  const mappedProperties: Array<[string, string, string, string]> = [
+    ["courseCode", "NOTION_COURSE_CODE_PROPERTY", "Course Code", "rich_text"],
+    ["estimatedHours", "NOTION_ESTIMATED_HOURS_PROPERTY", "Est.", "number"],
+    ["actualHours", "NOTION_ACTUAL_HOURS_PROPERTY", "Actual", "number"],
+    ["assessment", "NOTION_ASSESSMENT_PROPERTY", "Assessment", "select"],
+    ["creditHours", "NOTION_CREDIT_HOURS_PROPERTY", "Credit Hours", "number"],
+    ["instructor", "NOTION_INSTRUCTOR_PROPERTY", "Instructor", "rich_text"],
+    ["peopleInstructor", "NOTION_PEOPLE_INSTRUCTOR_PROPERTY", "People / Instructor", "people"],
+    ["marksGrade", "NOTION_MARKS_GRADE_PROPERTY", "Marks / Grade", "rich_text"],
+    ["nextReviewDate", "NOTION_NEXT_REVIEW_DATE_PROPERTY", "Next Review Date", "date"],
+    ["notes", "NOTION_NOTES_PROPERTY", "Notes", "rich_text"],
+    ["recurrence", "NOTION_RECURRENCE_PROPERTY", "Recurrence", "rich_text"],
+    ["resourceLink", "NOTION_RESOURCE_LINK_PROPERTY", "Resource Link", "link"],
+    ["semester", "NOTION_SEMESTER_PROPERTY", "Semester", "select"],
+    ["timeBlock", "NOTION_TIME_BLOCK_PROPERTY", "Time Block", "rich_text"],
+    ["venueLink", "NOTION_VENUE_LINK_PROPERTY", "Venue Link", "link"],
+    ["dateEnd", "NOTION_DUE_DATE_PROPERTY", "Date", "date"],
+    ["deliverable", "NOTION_DELIVERABLE_PROPERTY", "Deliverable", "checkbox"],
+  ];
   return {
     types: optionsFor(properties, "NOTION_TYPE_PROPERTY", "Type"),
     statuses: optionsFor(properties, "NOTION_STATUS_PROPERTY", "Status"),
@@ -138,6 +174,13 @@ export async function fetchNotionTaskOptions() {
     areas: optionsFor(properties, "NOTION_AREA_PROPERTY", "Area"),
     courses: optionsFor(properties, "NOTION_COURSE_PROPERTY", "Course"),
     assessments: optionsFor(properties, "NOTION_ASSESSMENT_PROPERTY", "Assessment"),
+    semesters: optionsFor(properties, "NOTION_SEMESTER_PROPERTY", "Semester"),
+    availableFields: mappedProperties.flatMap(([field, variable, fallback, type]) => {
+      const name = schemaProperty(properties, variable, fallback);
+      return name && (type === "link"
+        ? ["url", "rich_text"].includes(properties[name]?.type ?? "")
+        : properties[name]?.type === type) ? [field] : [];
+    }),
   };
 }
 
@@ -205,41 +248,124 @@ function taskProperties(
   addChoiceProperty(properties, schema, "NOTION_AREA_PROPERTY", "Area", input.area, "select");
   addChoiceProperty(properties, schema, "NOTION_COURSE_PROPERTY", "Course", input.course, "select");
   addChoiceProperty(properties, schema, "NOTION_ASSESSMENT_PROPERTY", "Assessment", input.assessment, "select");
+  addChoiceProperty(properties, schema, "NOTION_SEMESTER_PROPERTY", "Semester", input.semester, "select");
   addTextProperty(properties, schema, "NOTION_COURSE_CODE_PROPERTY", "Course Code", input.courseCode);
   addTextProperty(properties, schema, "NOTION_NEXT_ACTION_PROPERTY", "Next Action", input.nextAction);
-  if (input.estimatedHours !== undefined && input.estimatedHours !== null) {
-    const name = schemaProperty(schema, "NOTION_ESTIMATED_HOURS_PROPERTY", "Est.");
-    if (!name || schema[name]?.type !== "number") {
-      throw new Error(`The Notion database does not have a number property named "${process.env.NOTION_ESTIMATED_HOURS_PROPERTY || "Est."}".`);
-    }
-    if (!Number.isFinite(input.estimatedHours) || input.estimatedHours < 0 || input.estimatedHours > 10000) {
-      throw new Error("Estimated hours must be a number between 0 and 10,000.");
-    }
-    properties[name] = { number: input.estimatedHours };
-  }
+  addTextProperty(properties, schema, "NOTION_INSTRUCTOR_PROPERTY", "Instructor", input.instructor);
+  addTextProperty(properties, schema, "NOTION_MARKS_GRADE_PROPERTY", "Marks / Grade", input.marksGrade);
+  addTextProperty(properties, schema, "NOTION_NOTES_PROPERTY", "Notes", input.notes);
+  addTextProperty(properties, schema, "NOTION_RECURRENCE_PROPERTY", "Recurrence", input.recurrence);
+  addTextProperty(properties, schema, "NOTION_TIME_BLOCK_PROPERTY", "Time Block", input.timeBlock);
+  addNumberProperty(properties, schema, "NOTION_ESTIMATED_HOURS_PROPERTY", "Est.", input.estimatedHours);
+  addNumberProperty(properties, schema, "NOTION_ACTUAL_HOURS_PROPERTY", "Actual", input.actualHours);
+  addNumberProperty(properties, schema, "NOTION_CREDIT_HOURS_PROPERTY", "Credit Hours", input.creditHours);
+  addLinkProperty(properties, schema, "NOTION_RESOURCE_LINK_PROPERTY", "Resource Link", input.resourceLink);
+  addLinkProperty(properties, schema, "NOTION_VENUE_LINK_PROPERTY", "Venue Link", input.venueLink);
+  addCheckboxProperty(properties, schema, "NOTION_DELIVERABLE_PROPERTY", "Deliverable", input.deliverable);
 
   if (clearEmptyOptional) {
     clearChoiceProperty(properties, schema, "NOTION_PRIORITY_PROPERTY", "Priority", input.priority);
     clearChoiceProperty(properties, schema, "NOTION_AREA_PROPERTY", "Area", input.area);
     clearChoiceProperty(properties, schema, "NOTION_COURSE_PROPERTY", "Course", input.course);
     clearChoiceProperty(properties, schema, "NOTION_ASSESSMENT_PROPERTY", "Assessment", input.assessment);
+    clearChoiceProperty(properties, schema, "NOTION_SEMESTER_PROPERTY", "Semester", input.semester);
     clearTextProperty(properties, schema, "NOTION_COURSE_CODE_PROPERTY", "Course Code", input.courseCode);
     clearTextProperty(properties, schema, "NOTION_NEXT_ACTION_PROPERTY", "Next Action", input.nextAction);
-    if (input.estimatedHours === null) {
-      const name = schemaProperty(schema, "NOTION_ESTIMATED_HOURS_PROPERTY", "Est.");
-      if (name && schema[name]?.type === "number") properties[name] = { number: null };
-    }
+    clearTextProperty(properties, schema, "NOTION_INSTRUCTOR_PROPERTY", "Instructor", input.instructor);
+    clearTextProperty(properties, schema, "NOTION_MARKS_GRADE_PROPERTY", "Marks / Grade", input.marksGrade);
+    clearTextProperty(properties, schema, "NOTION_NOTES_PROPERTY", "Notes", input.notes);
+    clearTextProperty(properties, schema, "NOTION_RECURRENCE_PROPERTY", "Recurrence", input.recurrence);
+    clearTextProperty(properties, schema, "NOTION_TIME_BLOCK_PROPERTY", "Time Block", input.timeBlock);
+    clearNumberProperty(properties, schema, "NOTION_ESTIMATED_HOURS_PROPERTY", "Est.", input.estimatedHours);
+    clearNumberProperty(properties, schema, "NOTION_ACTUAL_HOURS_PROPERTY", "Actual", input.actualHours);
+    clearNumberProperty(properties, schema, "NOTION_CREDIT_HOURS_PROPERTY", "Credit Hours", input.creditHours);
+    clearLinkProperty(properties, schema, "NOTION_RESOURCE_LINK_PROPERTY", "Resource Link", input.resourceLink);
+    clearLinkProperty(properties, schema, "NOTION_VENUE_LINK_PROPERTY", "Venue Link", input.venueLink);
   }
 
   const dateName = schemaProperty(schema, "NOTION_DUE_DATE_PROPERTY", "Date");
   if (input.dueDate?.trim()) {
     validateDueDate(input.dueDate);
+    if (input.dateEnd?.trim()) {
+      validateDueDate(input.dateEnd);
+      if (new Date(input.dateEnd).getTime() < new Date(input.dueDate).getTime()) {
+        throw new Error("The end date must be on or after the start date.");
+      }
+    }
     if (!dateName || schema[dateName]?.type !== "date") {
       throw new Error(`The Notion database does not have a date property named "${process.env.NOTION_DUE_DATE_PROPERTY || "Date"}".`);
     }
-    properties[dateName] = { date: { start: input.dueDate } };
-  } else if (clearEmptyOptional && dateName && schema[dateName]?.type === "date") {
+    properties[dateName] = { date: { start: input.dueDate, ...(input.dateEnd?.trim() ? { end: input.dateEnd } : {}) } };
+  } else if (clearEmptyOptional && input.dueDate === "" && dateName && schema[dateName]?.type === "date") {
     properties[dateName] = { date: null };
+  }
+  const reviewDateName = schemaProperty(schema, "NOTION_NEXT_REVIEW_DATE_PROPERTY", "Next Review Date");
+  if (input.nextReviewDate?.trim()) {
+    validateDueDate(input.nextReviewDate);
+    if (!reviewDateName || schema[reviewDateName]?.type !== "date") {
+      throw new Error(`The Notion database does not have a date property named "${process.env.NOTION_NEXT_REVIEW_DATE_PROPERTY || "Next Review Date"}".`);
+    }
+    properties[reviewDateName] = { date: { start: input.nextReviewDate } };
+  } else if (clearEmptyOptional && input.nextReviewDate === "" && reviewDateName && schema[reviewDateName]?.type === "date") {
+    properties[reviewDateName] = { date: null };
+  }
+
+  function addNumberProperty(
+    target: Record<string, unknown>,
+    schema: Record<string, NotionPropertySchema>,
+    variable: string,
+    fallback: string,
+    value: number | null | undefined,
+  ): void {
+    if (value === undefined || value === null) return;
+    const name = schemaProperty(schema, variable, fallback);
+    if (!name || schema[name]?.type !== "number") {
+      throw new Error(`The Notion database does not have a number property named "${process.env[variable] || fallback}".`);
+    }
+    if (!Number.isFinite(value) || value < 0 || value > 10000) {
+      throw new Error(`${fallback} must be a number between 0 and 10,000.`);
+    }
+    target[name] = { number: value };
+  }
+
+  function addCheckboxProperty(
+    target: Record<string, unknown>,
+    schema: Record<string, NotionPropertySchema>,
+    variable: string,
+    fallback: string,
+    value: boolean | undefined,
+  ): void {
+    if (value === undefined) return;
+    const name = schemaProperty(schema, variable, fallback);
+    if (!name || schema[name]?.type !== "checkbox") {
+      throw new Error(`The Notion database does not have a checkbox property named "${process.env[variable] || fallback}".`);
+    }
+    target[name] = { checkbox: value };
+  }
+
+  function addLinkProperty(
+    target: Record<string, unknown>,
+    schema: Record<string, NotionPropertySchema>,
+    variable: string,
+    fallback: string,
+    value: string | undefined,
+  ): void {
+    if (!value?.trim()) return;
+    const name = schemaProperty(schema, variable, fallback);
+    if (!name || !["url", "rich_text"].includes(schema[name]?.type ?? "")) {
+      throw new Error(`The Notion database does not have a URL or text property named "${process.env[variable] || fallback}".`);
+    }
+    if (schema[name]?.type === "url") {
+      try {
+        const url = new URL(value);
+        if (!["http:", "https:"].includes(url.protocol)) throw new Error();
+      } catch {
+        throw new Error(`${fallback} must be a valid http or https URL.`);
+      }
+      target[name] = { url: value };
+    } else {
+      target[name] = { rich_text: [{ text: { content: value } }] };
+    }
   }
 
   return properties;
@@ -252,7 +378,7 @@ function clearChoiceProperty(
   fallback: string,
   value: string | undefined,
 ): void {
-  if (value?.trim()) return;
+  if (value === undefined || value.trim()) return;
   const name = schemaProperty(schema, variable, fallback);
   if (name && schema[name]?.type === "select") target[name] = { select: null };
 }
@@ -264,8 +390,33 @@ function clearTextProperty(
   fallback: string,
   value: string | undefined,
 ): void {
-  if (value?.trim()) return;
+  if (value === undefined || value.trim()) return;
   const name = schemaProperty(schema, variable, fallback);
+  if (name && schema[name]?.type === "rich_text") target[name] = { rich_text: [] };
+}
+
+function clearNumberProperty(
+  target: Record<string, unknown>,
+  schema: Record<string, NotionPropertySchema>,
+  variable: string,
+  fallback: string,
+  value: number | null | undefined,
+): void {
+  if (value !== null) return;
+  const name = schemaProperty(schema, variable, fallback);
+  if (name && schema[name]?.type === "number") target[name] = { number: null };
+}
+
+function clearLinkProperty(
+  target: Record<string, unknown>,
+  schema: Record<string, NotionPropertySchema>,
+  variable: string,
+  fallback: string,
+  value: string | undefined,
+): void {
+  if (value === undefined || value.trim()) return;
+  const name = schemaProperty(schema, variable, fallback);
+  if (name && schema[name]?.type === "url") target[name] = { url: null };
   if (name && schema[name]?.type === "rich_text") target[name] = { rich_text: [] };
 }
 
@@ -334,6 +485,38 @@ export async function updateNotionTask(pageId: string, input: CreateTaskInput): 
   return toTask(await response.json() as NotionPage);
 }
 
+export async function setNotionTaskCompleted(pageId: string, completed: boolean): Promise<Task> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pageId)) {
+    throw new Error("Enter a valid planner item ID.");
+  }
+  const database = await fetchDatabase();
+  const properties: Record<string, unknown> = {};
+  const checkboxName = schemaProperty(database.properties, "NOTION_COMPLETED_PROPERTY", "Completed");
+  if (checkboxName && database.properties[checkboxName]?.type === "checkbox") {
+    properties[checkboxName] = { checkbox: completed };
+  }
+  const statusName = schemaProperty(database.properties, "NOTION_STATUS_PROPERTY", "Status");
+  if (statusName && database.properties[statusName]?.type === "status") {
+    const statuses = database.properties[statusName]?.status?.options?.map((option) => option.name) ?? [];
+    const desiredStatus = completed
+      ? statuses.find((value) => /^(done|complete|completed|finished)$/i.test(value))
+      : statuses.find((value) => /^(planned|not started)$/i.test(value));
+    if (desiredStatus) properties[statusName] = { status: { name: desiredStatus } };
+  }
+  if (Object.keys(properties).length === 0) {
+    throw new Error("Add a Completed checkbox or a Done status option to your Notion database to mark tasks complete.");
+  }
+  const response = await fetch(`${NOTION_API}/pages/${encodeURIComponent(pageId)}`, {
+    method: "PATCH",
+    headers: notionHeaders(notionToken()),
+    body: JSON.stringify({ properties }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw await notionError(response);
+  return toTask(await response.json() as NotionPage);
+}
+
 export async function archiveNotionTask(pageId: string): Promise<void> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pageId)) {
     throw new Error("Enter a valid planner item ID.");
@@ -384,7 +567,21 @@ function toTask(page: NotionPage): Task {
   const checkboxCompleted = completedName ? properties[completedName]?.checkbox === true : false;
   const done = /^(done|complete|completed|finished)$/i.test(status.trim());
   const dueDateProperty = configuredProperty(properties, "NOTION_DUE_DATE_PROPERTY", "Date");
-  const dueDate = dueDateProperty ? properties[dueDateProperty]?.date?.start ?? null : null;
+  const dateValue = dueDateProperty ? properties[dueDateProperty]?.date : null;
+  const dueDate = dateValue?.start ?? null;
+  const nextReviewProperty = configuredProperty(properties, "NOTION_NEXT_REVIEW_DATE_PROPERTY", "Next Review Date");
+  const numberProperty = (variable: string, fallback: string) => {
+    const name = configuredProperty(properties, variable, fallback);
+    const value = name ? properties[name]?.number : null;
+    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  };
+  const peoplePropertyName = configuredProperty(properties, "NOTION_PEOPLE_INSTRUCTOR_PROPERTY", "People / Instructor");
+  const peopleInstructor = peoplePropertyName
+    ? (properties[peoplePropertyName]?.people ?? []).map((person) => person.name || person.id || "").filter(Boolean)
+    : [];
+  const peopleInstructorIds = peoplePropertyName
+    ? (properties[peoplePropertyName]?.people ?? []).map((person) => person.id ?? "").filter(Boolean)
+    : [];
 
   return {
     id: page.id,
@@ -401,10 +598,30 @@ function toTask(page: NotionPage): Task {
       const value = name ? properties[name]?.number : null;
       return typeof value === "number" && Number.isFinite(value) ? value : undefined;
     })(),
+    actualHours: numberProperty("NOTION_ACTUAL_HOURS_PROPERTY", "Actual"),
     assessment: propertyText(properties, "NOTION_ASSESSMENT_PROPERTY", "Assessment"),
+    creditHours: numberProperty("NOTION_CREDIT_HOURS_PROPERTY", "Credit Hours"),
+    instructor: propertyText(properties, "NOTION_INSTRUCTOR_PROPERTY", "Instructor"),
+    peopleInstructor,
+    peopleInstructorIds,
+    marksGrade: propertyText(properties, "NOTION_MARKS_GRADE_PROPERTY", "Marks / Grade"),
+    nextReviewDate: nextReviewProperty ? properties[nextReviewProperty]?.date?.start ?? null : null,
+    notes: propertyText(properties, "NOTION_NOTES_PROPERTY", "Notes"),
+    recurrence: propertyText(properties, "NOTION_RECURRENCE_PROPERTY", "Recurrence"),
+    resourceLink: propertyText(properties, "NOTION_RESOURCE_LINK_PROPERTY", "Resource Link"),
+    semester: propertyText(properties, "NOTION_SEMESTER_PROPERTY", "Semester"),
+    timeBlock: propertyText(properties, "NOTION_TIME_BLOCK_PROPERTY", "Time Block"),
+    venueLink: propertyText(properties, "NOTION_VENUE_LINK_PROPERTY", "Venue Link"),
     nextAction: propertyText(properties, "NOTION_NEXT_ACTION_PROPERTY", "Next Action"),
     dueDate,
+    dateEnd: dateValue?.end ?? null,
+    dateIsDateTime: Boolean(dueDate?.includes("T")),
+    deliverable: (() => {
+      const name = configuredProperty(properties, "NOTION_DELIVERABLE_PROPERTY", "Deliverable");
+      return name ? properties[name]?.checkbox === true : /deliverable/i.test(propertyText(properties, "NOTION_TYPE_PROPERTY", "Type"));
+    })(),
     createdAt: page.created_time,
+    updatedAt: page.last_edited_time ?? page.created_time,
     completed: checkboxCompleted || done,
   };
 }

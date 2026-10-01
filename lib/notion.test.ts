@@ -13,13 +13,26 @@ const database = {
   properties: {
     Item: { type: "title", title: {} },
     Type: { type: "select", select: { options: [{ name: "Task" }, { name: "Deliverable" }] } },
-    Status: { type: "status", status: { options: [{ name: "Planned" }, { name: "In progress" }] } },
+    Status: { type: "status", status: { options: [{ name: "Planned" }, { name: "In progress" }, { name: "Done" }] } },
     Priority: { type: "select", select: { options: [{ name: "High" }, { name: "Medium" }, { name: "Low" }] } },
     Area: { type: "select", select: { options: [{ name: "University" }] } },
     Course: { type: "select", select: { options: [{ name: "General" }, { name: "Network Design" }] } },
     "Course Code": { type: "rich_text", rich_text: {} },
     "Est.": { type: "number", number: {} },
     Assessment: { type: "select", select: { options: [{ name: "Lab" }, { name: "Assignment" }] } },
+    Actual: { type: "number", number: {} },
+    "Credit Hours": { type: "number", number: {} },
+    Instructor: { type: "rich_text", rich_text: {} },
+    "People / Instructor": { type: "people", people: {} },
+    "Marks / Grade": { type: "rich_text", rich_text: {} },
+    "Next Review Date": { type: "date", date: {} },
+    Notes: { type: "rich_text", rich_text: {} },
+    Recurrence: { type: "rich_text", rich_text: {} },
+    "Resource Link": { type: "url", url: {} },
+    Semester: { type: "select", select: { options: [{ name: "First Semester" }, { name: "Second Semester" }, { name: "Summer" }] } },
+    "Time Block": { type: "rich_text", rich_text: {} },
+    "Venue Link": { type: "rich_text", rich_text: {} },
+    Deliverable: { type: "checkbox", checkbox: {} },
     Date: { type: "date", date: {} },
     "Next Action": { type: "rich_text", rich_text: {} },
     Completed: { type: "checkbox", checkbox: {} },
@@ -79,6 +92,9 @@ test("loads assessment choices from the Notion database schema", async () => {
   mockNotion({}, () => {});
   const options = await notion.fetchNotionTaskOptions();
   assert.deepEqual(options.assessments, ["Lab", "Assignment"]);
+  assert.deepEqual(options.semesters, ["First Semester", "Second Semester", "Summer"]);
+  assert.ok(options.availableFields.includes("dateEnd"));
+  assert.ok(options.availableFields.includes("deliverable"));
 });
 
 test("creates a task with a confirmed local date-time due date", async () => {
@@ -129,6 +145,66 @@ test("reads and writes course codes, estimated hours, and assessment tags", asyn
   assert.equal(task.assessment, "Lab");
 });
 
+test("round-trips the original planner metadata and date range", async () => {
+  let createBody: Record<string, unknown> = {};
+  mockNotion(page({
+    Item: { type: "title", title: [{ plain_text: "Weekly AI class" }] },
+    Type: { type: "select", select: { name: "Class" } },
+    Status: { type: "status", status: { name: "Planned" } },
+    Date: { type: "date", date: { start: "2026-10-05T09:00:00+03:00", end: "2026-10-05T11:00:00+03:00" } },
+    "Next Review Date": { type: "date", date: { start: "2026-10-12" } },
+    "Actual": { type: "number", number: 1.5 },
+    "Credit Hours": { type: "number", number: 3 },
+    Instructor: { type: "rich_text", rich_text: [{ plain_text: "Mr. Dessalew G." }] },
+    "People / Instructor": { type: "people", people: [{ id: "notion-user-id", name: "Mr. Dessalew G." }] },
+    "Marks / Grade": { type: "rich_text", rich_text: [{ plain_text: "Pending" }] },
+    Notes: { type: "rich_text", rich_text: [{ plain_text: "Bring lab notebook" }] },
+    Recurrence: { type: "rich_text", rich_text: [{ plain_text: "Weekly" }] },
+    "Resource Link": { type: "url", url: "https://example.com/course" },
+    Semester: { type: "select", select: { name: "First Semester" } },
+    "Time Block": { type: "rich_text", rich_text: [{ plain_text: "Monday 09:00-11:00" }] },
+    "Venue Link": { type: "rich_text", rich_text: [{ plain_text: "Room 4" }] },
+    Deliverable: { type: "checkbox", checkbox: true },
+  }), (_url, _init, body) => { createBody = body; });
+
+  const task = await notion.createNotionTask({
+    title: "Weekly AI class",
+    dueDate: "2026-10-05T09:00:00+03:00",
+    dateEnd: "2026-10-05T11:00:00+03:00",
+    nextReviewDate: "2026-10-12",
+    actualHours: 1.5,
+    creditHours: 3,
+    instructor: "Mr. Dessalew G.",
+    marksGrade: "Pending",
+    notes: "Bring lab notebook",
+    recurrence: "Weekly",
+    resourceLink: "https://example.com/course",
+    semester: "First Semester",
+    timeBlock: "Monday 09:00-11:00",
+    venueLink: "Room 4",
+    deliverable: true,
+  });
+  const properties = createBody.properties as Record<string, Record<string, unknown>>;
+
+  assert.deepEqual(properties.Date, { date: { start: "2026-10-05T09:00:00+03:00", end: "2026-10-05T11:00:00+03:00" } });
+  assert.deepEqual(properties["Next Review Date"], { date: { start: "2026-10-12" } });
+  assert.deepEqual(properties.Actual, { number: 1.5 });
+  assert.deepEqual(properties["Credit Hours"], { number: 3 });
+  assert.deepEqual(properties.Deliverable, { checkbox: true });
+  assert.deepEqual(properties.Semester, { select: { name: "First Semester" } });
+  assert.equal(task.dateEnd, "2026-10-05T11:00:00+03:00");
+  assert.equal(task.dateIsDateTime, true);
+  assert.equal(task.instructor, "Mr. Dessalew G.");
+  assert.deepEqual(task.peopleInstructor, ["Mr. Dessalew G."]);
+  assert.equal(task.actualHours, 1.5);
+  assert.equal(task.creditHours, 3);
+  assert.equal(task.deliverable, true);
+  assert.equal(task.notes, "Bring lab notebook");
+  assert.equal(task.resourceLink, "https://example.com/course");
+  assert.equal(task.venueLink, "Room 4");
+  assert.equal(task.semester, "First Semester");
+});
+
 test("updates task properties and clears optional values", async () => {
   let updateBody: Record<string, unknown> = {};
   mockNotion(page({
@@ -174,6 +250,24 @@ test("updates task properties and clears optional values", async () => {
   assert.deepEqual(properties["Next Action"], { rich_text: [] });
 });
 
+test("partial task updates preserve optional Notion metadata that was not sent", async () => {
+  let updateBody: Record<string, unknown> = {};
+  mockNotion(page({
+    Item: { type: "title", title: [{ plain_text: "Updated title" }] },
+    Type: { type: "select", select: { name: "Task" } },
+    Status: { type: "status", status: { name: "Planned" } },
+  }), (_url, _init, body) => { updateBody = body; });
+
+  await notion.updateNotionTask("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", { title: "Updated title" });
+
+  const properties = updateBody.properties as Record<string, unknown>;
+  assert.equal("Notes" in properties, false);
+  assert.equal("Est." in properties, false);
+  assert.equal("Deliverable" in properties, false);
+  assert.equal("Next Review Date" in properties, false);
+  assert.equal("Date" in properties, false);
+});
+
 test("archives a task instead of permanently deleting it", async () => {
   let archiveBody: Record<string, unknown> = {};
   mockNotion({}, (url, init, body) => {
@@ -184,6 +278,23 @@ test("archives a task instead of permanently deleting it", async () => {
 
   await notion.archiveNotionTask("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
   assert.deepEqual(archiveBody, { archived: true });
+});
+
+test("marks a task complete using the Notion checkbox and status", async () => {
+  let updateBody: Record<string, unknown> = {};
+  mockNotion(page({
+    Item: { type: "title", title: [{ plain_text: "Finish lab" }] },
+    Status: { type: "status", status: { name: "Done" } },
+    Completed: { type: "checkbox", checkbox: true },
+  }), (_url, init, body) => {
+    assert.equal(init.method, "PATCH");
+    updateBody = body;
+  });
+  const task = await notion.setNotionTaskCompleted("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", true);
+  const properties = updateBody.properties as Record<string, Record<string, unknown>>;
+  assert.deepEqual(properties.Completed, { checkbox: true });
+  assert.deepEqual(properties.Status, { status: { name: "Done" } });
+  assert.equal(task.completed, true);
 });
 
 test("rejects invalid Notion IDs before making a request", async () => {

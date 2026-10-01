@@ -9,10 +9,27 @@ export type Task = {
   course: string;
   courseCode?: string;
   estimatedHours?: number;
+  actualHours?: number;
   assessment?: string;
+  creditHours?: number;
+  instructor?: string;
+  peopleInstructor?: string[];
+  peopleInstructorIds?: string[];
+  marksGrade?: string;
+  nextReviewDate?: string | null;
+  notes?: string;
+  recurrence?: string;
+  resourceLink?: string;
+  semester?: string;
+  timeBlock?: string;
+  venueLink?: string;
   nextAction: string;
   dueDate: string | null;
+  dateEnd?: string | null;
+  dateIsDateTime?: boolean;
+  deliverable?: boolean;
   createdAt: string;
+  updatedAt?: string;
   completed: boolean;
 };
 
@@ -23,6 +40,8 @@ export type TaskOptions = {
   areas: string[];
   courses: string[];
   assessments: string[];
+  semesters: string[];
+  availableFields: string[];
 };
 
 export type TasksResponse = {

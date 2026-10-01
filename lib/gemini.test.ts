@@ -161,6 +161,8 @@ test("rejects a proposed select value that is not in the Notion options", async 
       areas: ["University"],
       courses: ["Biology"],
       assessments: ["Lab"],
+      semesters: [],
+      availableFields: [],
     }),
     /not an option in your Notion database/,
   );
@@ -242,5 +244,59 @@ test("rejects overlapping or prayer-conflicting day-plan blocks", async () => {
   await assert.rejects(
     getPlannerAssistantDayPlan([], "2026-10-01", "Africa/Addis_Ababa", prayerTimes),
     /overlapping|prayer time/,
+  );
+});
+
+test("enforces selected areas, courses, work windows, and available hours", async () => {
+  mockGeminiText(JSON.stringify({
+    action: "day_plan",
+    summary: "A focused study block.",
+    blocks: [
+      { title: "Biology reading", area: "University", startTime: "10:00", endTime: "11:00", nextAction: "Open the reading.", taskId: task.id },
+    ],
+  }));
+  const preferences = {
+    availableHours: 1,
+    studyStart: "09:30",
+    studyEnd: "12:00",
+    selectedAreas: ["University"],
+    selectedCourses: ["Biology"],
+    energyLevel: "medium" as const,
+    instructions: "",
+  };
+  const prayerTimes = { Fajr: "04:48", Dhuhr: "12:31", Asr: "15:19", Maghrib: "18:02", Isha: "19:32" };
+  const plannedTask = { ...task, course: "Biology" };
+
+  const plan = await getPlannerAssistantDayPlan(
+    [plannedTask], "2026-10-01", "Africa/Addis_Ababa", prayerTimes, preferences,
+  );
+  assert.equal(plan.blocks[0].startTime, "10:00");
+
+  await assert.rejects(
+    getPlannerAssistantDayPlan(
+      [{ ...task, course: "History" }], "2026-10-01", "Africa/Addis_Ababa", prayerTimes, preferences,
+    ),
+    /selected planning courses/,
+  );
+  await assert.rejects(
+    getPlannerAssistantDayPlan(
+      [plannedTask], "2026-10-01", "Africa/Addis_Ababa", prayerTimes,
+      { ...preferences, selectedAreas: ["Coding Lab"] },
+    ),
+    /selected planning areas/,
+  );
+  await assert.rejects(
+    getPlannerAssistantDayPlan(
+      [plannedTask], "2026-10-01", "Africa/Addis_Ababa", prayerTimes,
+      { ...preferences, availableHours: 0.5 },
+    ),
+    /available hours/,
+  );
+  await assert.rejects(
+    getPlannerAssistantDayPlan(
+      [plannedTask], "2026-10-01", "Africa/Addis_Ababa", prayerTimes,
+      { ...preferences, studyStart: "10:30" },
+    ),
+    /planning window/,
   );
 });
