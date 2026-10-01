@@ -46,10 +46,11 @@ Next.js middleware + API access check (allowlisted verified email)
         │ POST /api/tasks           create a planner item
         │ PATCH /api/tasks/:id      edit a planner item
         │ DELETE /api/tasks/:id     archive a planner item
+        │ POST /api/assistant      ask about tasks or get next-action ideas
         ▼
 Next.js server (API routes + Notion mapping)
         │
-        │ NOTION_API_KEY / NOTION_TOKEN (server-only)
+        │ NOTION_API_KEY / NOTION_TOKEN / GEMINI_API_KEY (server-only)
         │ NOTION_DATABASE_ID
         ▼
 Notion API (your existing planner database)
@@ -182,6 +183,7 @@ can be restored from Notion's trash.
 ```text
 notion-dashboard/
 ├── app/
+│   ├── api/assistant/       # Server-side Gemini planner assistant
 │   ├── api/tasks/route.ts   # GET task data/options and POST new items
 │   ├── sign-in/             # Clerk sign-in page
 │   ├── global-error.tsx     # Friendly recovery screen for unexpected errors
@@ -189,9 +191,11 @@ notion-dashboard/
 │   ├── layout.tsx           # Shared page layout and browser metadata
 │   └── page.tsx             # Main dashboard, metrics, calendar, and item form
 ├── components/
-│   └── dashboard-charts.tsx # Recharts visualizations
+│   ├── dashboard-charts.tsx # Recharts visualizations
+│   └── planner-assistant.tsx # AI next-action suggestions and task Q&A
 ├── lib/
 │   ├── access.ts            # Verified-email allowlist check
+│   ├── gemini.ts            # Server-side Gemini API requests
 │   ├── notion.ts            # Notion API requests, validation, and mapping
 │   └── types.ts             # Shared Task and API data types
 ├── middleware.ts            # Requires Clerk sign-in for app/API routes
@@ -215,7 +219,8 @@ notion-dashboard/
   `app/api/tasks/route.ts` handles `GET` and `POST`; `app/api/tasks/[id]/route.ts`
   handles item updates and archives.
 - An **environment variable** is configuration supplied to the server at
-  runtime. `NOTION_API_KEY` is secret; do not prefix it with `NEXT_PUBLIC_`.
+  runtime. `NOTION_API_KEY` and `GEMINI_API_KEY` are secret; do not prefix them
+  with `NEXT_PUBLIC_`.
 - A **Notion integration** is the authenticated connection the app uses. It
   must be explicitly shared with your existing planner database.
 - A **TypeScript type** such as `Task` describes the fields an object should
@@ -244,10 +249,19 @@ NOTION_DATABASE_ID=your_notion_database_id
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
 CLERK_SECRET_KEY=sk_...
 ALLOWED_EMAILS=your_verified_email@example.com
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
 The email must be verified in Clerk. `ALLOWED_EMAILS` is enforced server-side
-by the API; do not expose it as a `NEXT_PUBLIC_` variable.
+by the API; do not expose it as a `NEXT_PUBLIC_` variable. The Gemini key is
+used only by the server-side planner assistant; never add a `NEXT_PUBLIC_`
+prefix to it.
+
+The **Planner assistant** on the dashboard can suggest next actions or answer
+questions using your Notion tasks. For each request, the server fetches planner
+data and sends selected task details to Google's Gemini API. Task details are
+limited to 150 items per request; aggregate counts still cover the full
+planner.
 
 Start the development server:
 
@@ -296,11 +310,11 @@ the corresponding mapping in `lib/notion.ts`.
 ## Deploy to Vercel
 
 1. Push the project to a Git repository you control and import it into Vercel.
-2. In the Vercel project settings, add `NOTION_API_KEY` (or `NOTION_TOKEN`) and
+2. In the Vercel project settings, add `NOTION_API_KEY` (or `NOTION_TOKEN`),
    `NOTION_DATABASE_ID`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
-   `CLERK_SECRET_KEY`, and `ALLOWED_EMAILS` under **Environment Variables**.
-   Use the Clerk keys from your Clerk application; set values for the Vercel
-   environments you will use.
+   `CLERK_SECRET_KEY`, `ALLOWED_EMAILS`, and `GEMINI_API_KEY` under
+   **Environment Variables**. Use the Clerk keys from your Clerk application;
+   set values for the Vercel environments you will use.
 3. Add property-name overrides if necessary. Ensure the allowlisted email is
    verified in Clerk.
 4. Redeploy after changing environment variables.
@@ -314,6 +328,9 @@ the environment variables on its server to call Notion.
   only. Check that your real token is not in a commit before pushing.
 - Never expose the token in a `NEXT_PUBLIC_...` variable, client component, or
   browser request.
+- `GEMINI_API_KEY` is sent to Google only from the server. Planner task details
+  are sent to Gemini when using the assistant; do not use it if you do not want
+  that data processed by Google.
 - Clerk middleware requires sign-in, and each task API method separately
   checks the signed-in user's verified email against the server-only
   `ALLOWED_EMAILS` allowlist. The dashboard UI is not the security boundary.
@@ -328,6 +345,8 @@ the environment variables on its server to call Notion.
 | --- | --- |
 | “Add `NOTION_API_KEY` and `NOTION_DATABASE_ID`...” | Fill both values in `.env.local` and restart `npm run dev`. `NOTION_TOKEN` is also accepted instead of `NOTION_API_KEY`. |
 | Clerk reports missing keys | Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` locally and in the Vercel project, then restart or redeploy. |
+| Planner assistant reports a missing Gemini key | Set `GEMINI_API_KEY` in `.env.local` or the Vercel environment, then restart or redeploy. |
+| Gemini rejects the API key | Check that `GEMINI_API_KEY` is valid and that the Gemini API is enabled for its Google project. |
 | Sign-in works but planner access is denied | Verify the signed-in email in Clerk and add the exact address to server-side `ALLOWED_EMAILS`. |
 | Notion returns 401 | Check that the integration secret is correct and active. |
 | Notion returns 404 | Check the database ID and share that database with the integration. |

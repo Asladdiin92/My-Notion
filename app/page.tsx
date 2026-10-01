@@ -36,6 +36,7 @@ import {
   TimelineChart,
   TypeChart,
 } from "@/components/dashboard-charts";
+import { PlannerAssistant } from "@/components/planner-assistant";
 import type { Task, TaskOptions, TasksResponse } from "@/lib/types";
 
 type LoadState = "loading" | "ready" | "error";
@@ -83,6 +84,7 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
     { label: "My tasks", icon: ListChecks, target: "tasks" },
     { label: "Calendar", icon: CalendarDays, target: "calendar" },
     { label: "Progress", icon: Target, target: "progress" },
+    { label: "AI planner", icon: Sparkles, target: "planner-assistant" },
   ];
   return (
     <aside className="sidebar">
@@ -496,6 +498,8 @@ export default function DashboardPage() {
             <article className="panel chart-panel"><div className="panel-heading"><div><h3>Task type</h3><p>How your tasks are categorized</p></div><span className="chart-heading-icon tone-violet"><Target size={15} /></span></div><TypeChart data={typeData} /></article>
             <article className="panel chart-panel timeline-panel"><div className="panel-heading"><div><h3>Task timeline</h3><p>Tasks created over the last 6 months</p></div><span className="chart-heading-icon tone-blue"><CalendarDays size={15} /></span></div><TimelineChart data={timelineData} /></article>
           </section>
+
+          <PlannerAssistant disabled={state !== "ready"} />
 
           <div className="content-grid">
             <CalendarCard tasks={tasks} />
