@@ -299,7 +299,7 @@ function CalendarCard({ tasks }: { tasks: Task[] }) {
   );
 }
 
-function TaskTable({ tasks, loading, search, onSearch, onCreate, onEdit, onDelete, createDisabled, deleting }: {
+function TaskTable({ tasks, loading, search, onSearch, onCreate, onEdit, onDelete, onBreakdown, createDisabled, deleting }: {
   tasks: Task[];
   loading: boolean;
   search: string;
@@ -307,6 +307,7 @@ function TaskTable({ tasks, loading, search, onSearch, onCreate, onEdit, onDelet
   onCreate: () => void;
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => void;
+  onBreakdown: (task: Task) => void;
   createDisabled: boolean;
   deleting: boolean;
 }) {
@@ -336,6 +337,7 @@ function TaskTable({ tasks, loading, search, onSearch, onCreate, onEdit, onDelet
                 <td className="next-action" title={task.nextAction || undefined}>{task.nextAction || "—"}</td>
                 <td className={`due-date${isOverdue(task, today) ? " overdue" : ""}`}>{task.dueDate ? <>{isOverdue(task, today) && <CircleAlert size={12} />}{formatDate(task.dueDate)}</> : "—"}</td>
                 <td><div className="task-row-actions">
+                  <button type="button" aria-label={`Break down ${task.title}`} title="Break this task into steps" onClick={() => onBreakdown(task)} disabled={deleting || task.completed || createDisabled}><Sparkles size={13} /></button>
                   <button type="button" aria-label={`Edit ${task.title}`} title="Edit task" onClick={() => onEdit(task)} disabled={deleting}><Pencil size={13} /></button>
                   <button type="button" className="delete-task" aria-label={`Delete ${task.title}`} title="Archive task" onClick={() => onDelete(task)} disabled={deleting}>
                     {deleting ? <LoaderCircle size={13} className="spin" /> : <Trash2 size={13} />}
@@ -369,6 +371,7 @@ export default function DashboardPage() {
   const [deletingTaskId, setDeletingTaskId] = useState("");
   const [actionError, setActionError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [taskToBreakDown, setTaskToBreakDown] = useState<Task | null>(null);
 
   const loadTasks = useCallback(async () => {
     setState("loading");
@@ -408,6 +411,8 @@ export default function DashboardPage() {
       : [task, ...current]);
     setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date()));
   }
+
+  const clearTaskToBreakDown = useCallback(() => setTaskToBreakDown(null), []);
 
   async function handleTaskDelete(task: Task) {
     if (!window.confirm(`Archive “${task.title}” from your Notion planner? This can be restored from Notion’s trash.`)) return;
@@ -506,7 +511,9 @@ export default function DashboardPage() {
             <article className="panel chart-panel timeline-panel"><div className="panel-heading"><div><h3>Task timeline</h3><p>Tasks created over the last 6 months</p></div><span className="chart-heading-icon tone-blue"><CalendarDays size={15} /></span></div><TimelineChart data={timelineData} /></article>
           </section>
 
-          <PlannerAssistant disabled={state !== "ready"} tasks={tasks} onTaskSaved={handleAssistantTaskSaved} />
+          <PlannerAssistant disabled={state !== "ready"} tasks={tasks} options={taskOptions}
+            taskToBreakDown={taskToBreakDown} onBreakdownHandled={clearTaskToBreakDown}
+            onTaskSaved={handleAssistantTaskSaved} />
 
           <div className="content-grid">
             <CalendarCard tasks={tasks} />
@@ -530,6 +537,10 @@ export default function DashboardPage() {
           <TaskTable tasks={tasks} loading={state === "loading"} search={search} onSearch={setSearch}
             onCreate={() => { setEditingTask(null); setCreateDialogOpen(true); }}
             onEdit={(task) => { setCreateDialogOpen(false); setEditingTask(task); }}
+            onBreakdown={(task) => {
+              setTaskToBreakDown(task);
+              void document.getElementById("planner-assistant")?.scrollIntoView({ behavior: "smooth" });
+            }}
             onDelete={(task) => void handleTaskDelete(task)}
             createDisabled={state !== "ready" || !taskOptions} deleting={Boolean(deletingTaskId)} />
 

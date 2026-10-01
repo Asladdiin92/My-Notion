@@ -72,6 +72,25 @@ test("creates a task using schema-aware defaults when fields are omitted", async
   assert.equal(task.title, "Read chapter");
 });
 
+test("creates a task with a confirmed local date-time due date", async () => {
+  let createBody: Record<string, unknown> = {};
+  mockNotion(page({
+    Item: { type: "title", title: [{ plain_text: "Algorithms homework" }] },
+    Type: { type: "select", select: { name: "Task" } },
+    Status: { type: "status", status: { name: "Planned" } },
+    Date: { type: "date", date: { start: "2026-10-05T14:00:00+03:00" } },
+  }), (_url, _init, body) => { createBody = body; });
+
+  const task = await notion.createNotionTask({
+    title: "Algorithms homework",
+    dueDate: "2026-10-05T14:00:00+03:00",
+  });
+  const properties = createBody.properties as Record<string, Record<string, unknown>>;
+
+  assert.deepEqual(properties.Date, { date: { start: "2026-10-05T14:00:00+03:00" } });
+  assert.equal(task.dueDate, "2026-10-05T14:00:00+03:00");
+});
+
 test("updates task properties and clears optional values", async () => {
   let updateBody: Record<string, unknown> = {};
   mockNotion(page({

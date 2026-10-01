@@ -5,8 +5,10 @@ process.env.GEMINI_API_KEY ??= "gemini-test-key";
 
 let getPlannerAssistantAnswer: typeof import("./gemini").getPlannerAssistantAnswer;
 let getPlannerAssistantPlan: typeof import("./gemini").getPlannerAssistantPlan;
+let getPlannerAssistantBreakdown: typeof import("./gemini").getPlannerAssistantBreakdown;
+let getPlannerAssistantDayPlan: typeof import("./gemini").getPlannerAssistantDayPlan;
 test.before(async () => {
-  ({ getPlannerAssistantAnswer, getPlannerAssistantPlan } = await import("./gemini"));
+  ({ getPlannerAssistantAnswer, getPlannerAssistantPlan, getPlannerAssistantBreakdown, getPlannerAssistantDayPlan } = await import("./gemini"));
 });
 
 const originalFetch = globalThis.fetch;
@@ -94,6 +96,22 @@ test("tries the fallback model if the primary model times out", async () => {
   assert.equal(requestCount, 2);
 });
 
+test("tries the fallback model if the primary model is rate-limited", async () => {
+  let requestCount = 0;
+  globalThis.fetch = async () => {
+    requestCount += 1;
+    if (requestCount === 1) {
+      return Response.json({ error: { message: "Rate limited." } }, { status: 429 });
+    }
+    return Response.json({ candidates: [{ content: { parts: [{ text: "Start with your next task." }] } }] });
+  };
+
+  const answer = await getPlannerAssistantAnswer("suggest", undefined, []);
+
+  assert.equal(answer, "Start with your next task.");
+  assert.equal(requestCount, 2);
+});
+
 test("returns a proposed task creation without mutating the planner", async () => {
   mockGeminiText(JSON.stringify({
     action: "create",
@@ -170,4 +188,58 @@ test("returns a clarification answer without proposing a change", async () => {
   const plan = await getPlannerAssistantPlan("Move the deadline.", [task]);
 
   assert.deepEqual(plan, { action: "answer", answer: "Which task would you like me to update?" });
+});
+
+test("breaks down a selected task into confirmable short steps", async () => {
+  mockGeminiText(JSON.stringify({
+    action: "breakdown",
+    taskId: task.id,
+    summary: "Start with one small step.",
+    steps: [
+      { title: "Open the lecture notes", minutes: 10, nextAction: "Find the biology folder and open lecture 3." },
+      { title: "List key terms", minutes: 15, nextAction: "Write down five terms from the first page." },
+      { title: "Review the diagrams", minutes: 20, nextAction: "Label the first diagram from memory." },
+    ],
+  }));
+
+  const plan = await getPlannerAssistantBreakdown([task], task.id);
+
+  assert.equal(plan.action, "breakdown");
+  assert.equal(plan.taskId, task.id);
+  assert.equal(plan.steps.length, 3);
+  assert.equal(plan.steps[1].minutes, 15);
+});
+
+test("builds a time-blocked day without overlapping prayer anchors", async () => {
+  mockGeminiText(JSON.stringify({
+    action: "day_plan",
+    summary: "Focus on one urgent study session.",
+    blocks: [
+      { title: "Review biology", area: "University", startTime: "09:00", endTime: "10:00", nextAction: "Open the lecture notes.", taskId: task.id },
+    ],
+  }));
+  const prayerTimes = { Fajr: "04:48", Dhuhr: "12:01", Asr: "15:19", Maghrib: "18:02", Isha: "19:32" };
+
+  const plan = await getPlannerAssistantDayPlan([task], "2026-10-01", "Africa/Addis_Ababa", prayerTimes);
+
+  assert.equal(plan.action, "day_plan");
+  assert.equal(plan.blocks[0].taskId, task.id);
+  assert.deepEqual(plan.prayerTimes, prayerTimes);
+});
+
+test("rejects overlapping or prayer-conflicting day-plan blocks", async () => {
+  mockGeminiText(JSON.stringify({
+    action: "day_plan",
+    summary: "Overlapping plan.",
+    blocks: [
+      { title: "Study", area: "University", startTime: "11:30", endTime: "12:30", nextAction: "Open notes." },
+      { title: "Code", area: "Coding Lab", startTime: "12:15", endTime: "13:00", nextAction: "Open editor." },
+    ],
+  }));
+  const prayerTimes = { Fajr: "04:48", Dhuhr: "12:01", Asr: "15:19", Maghrib: "18:02", Isha: "19:32" };
+
+  await assert.rejects(
+    getPlannerAssistantDayPlan([], "2026-10-01", "Africa/Addis_Ababa", prayerTimes),
+    /overlapping|prayer time/,
+  );
 });

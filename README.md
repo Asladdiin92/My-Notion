@@ -37,6 +37,10 @@ the input against the Notion database schema, and then makes the Notion change.
 The planner assistant can turn natural-language instructions into a proposed
 create or edit. It only reads Notion to prepare the proposal; you must confirm
 the preview before the browser calls the existing create or edit API.
+It can also generate a checklist-style task breakdown or a color-coded daily
+timeline. Harar prayer times are fetched for the selected day and converted to
+the browser's time zone; creating the generated steps or schedule blocks in
+Notion always requires a separate confirmation.
 
 ```text
 Your browser (React dashboard + Clerk sign-in)
@@ -201,6 +205,8 @@ notion-dashboard/
 │   ├── gemini.test.ts       # Gemini fallback behavior tests
 │   ├── gemini.ts            # Server-side Gemini API requests
 │   ├── notion.ts            # Notion API requests, validation, and mapping
+│   ├── prayer-times.test.ts # Prayer-time lookup and timezone tests
+│   ├── prayer-times.ts      # Harar prayer-time lookup and timezone conversion
 │   └── types.ts             # Shared Task and API data types
 ├── middleware.ts            # Requires Clerk sign-in for app/API routes
 ├── .env.example             # Safe placeholder template to copy from
@@ -261,18 +267,29 @@ by the API; do not expose it as a `NEXT_PUBLIC_` variable. The Gemini key is
 used only by the server-side planner assistant; never add a `NEXT_PUBLIC_`
 prefix to it.
 
-The **Planner assistant** can suggest next actions, answer questions, or
-interpret instructions such as “add a biology review task tomorrow” or “move
-my biology deadline to Friday.” For create/edit instructions, it shows a
-preview and changes nothing in Notion until you select **Confirm**. It asks
-for clarification if an edit does not clearly match a task; archiving tasks
-is not available through the assistant. For each request, the server fetches
-planner data and sends selected task details to Google's Gemini API. Task
-details are limited to 150 items per request; aggregate counts still cover
-the full planner. Requests use Gemini 3.8 Flash first and automatically retry
-with Gemini 3.5 Flash-Lite if the primary model is temporarily overloaded.
-It also tries the fallback after a request timeout. Other errors, such as an
-invalid API key, are reported without retrying.
+The **Planner assistant** includes quick actions to plan the day, decompose a
+task, identify urgent work, or get a motivational nudge. Its coach rules put
+faith/prayer first, then urgent University deadlines, Coding Lab milestones,
+and Freelance Work; suggestions include estimated time, an area, and a
+concrete next action.
+
+The assistant can also interpret instructions such as “add a biology review
+task tomorrow” or “move my biology deadline to Friday.” For create/edit
+instructions, it previews the fields and makes no Notion change until you
+select **Confirm**. It asks for clarification if an edit does not clearly
+match a task. Task breakdown steps and daily schedule blocks are checkable,
+and the selected items are only created in Notion after confirmation.
+Archiving remains a manual task-table action.
+
+Daily plans cover 08:30–18:00 in the device time zone and use prayer times for
+Harar, Ethiopia from AlAdhan's by-city service (its default calculation
+method). Prayer anchors are displayed separately; work blocks are validated
+to avoid overlap, the configured window, and the prayer-time buffers. Selected
+schedule blocks are saved as Notion date-times in the device's local time zone.
+Only the task breakdown and exact task details needed for planning are sent to
+Google Gemini; task details are limited to 150 per request. Gemini 3.8 Flash
+is tried first and automatically falls back to Gemini 3.5 Flash-Lite on
+temporary overloads or timeouts.
 
 Start the development server:
 
@@ -342,6 +359,9 @@ the environment variables on its server to call Notion.
 - `GEMINI_API_KEY` is sent to Google only from the server. Planner task details
   are sent to Gemini when using the assistant; do not use it if you do not want
   that data processed by Google.
+- Day planning sends the selected date and device time zone to this app's
+  server; the server requests prayer times for Harar from AlAdhan. No precise
+  device location is collected.
 - Clerk middleware requires sign-in, and each task API method separately
   checks the signed-in user's verified email against the server-only
   `ALLOWED_EMAILS` allowlist. The dashboard UI is not the security boundary.
