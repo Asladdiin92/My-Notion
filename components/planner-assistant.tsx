@@ -2,7 +2,15 @@
 
 import { CalendarDays, Check, Clock3, LoaderCircle, Scissors, Send, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import type { BreakdownPlan, DayPlan, PlannerPlan, PlannerChange, ScheduleBlock } from "@/lib/gemini";
+import type {
+  BreakdownPlan,
+  DatabaseDraftPlan,
+  DayPlan,
+  PlannerPlan,
+  PlannerChange,
+  ResearchSource,
+  ScheduleBlock,
+} from "@/lib/gemini";
 import type { Task, TaskOptions } from "@/lib/types";
 import {
   formatPlannerDate,
@@ -11,10 +19,15 @@ import {
   todayInPlannerTimeZone,
 } from "@/lib/planner-datetime";
 
-type AssistantResponse = { answer?: string; plan?: PlannerPlan | BreakdownPlan | DayPlan; error?: string };
+type AssistantResponse = {
+  answer?: string;
+  plan?: PlannerPlan | BreakdownPlan | DayPlan | DatabaseDraftPlan;
+  sources?: ResearchSource[];
+  error?: string;
+};
 type TaskMutationResponse = { ok: boolean; task?: Task; error?: string };
 type ChangeField = keyof PlannerChange["fields"];
-type AssistantMode = "suggest" | "ask" | "plan" | "breakdown" | "day";
+type AssistantMode = "suggest" | "ask" | "plan" | "breakdown" | "day" | "research" | "writing" | "translate" | "analyze" | "autofill";
 type PlannedTask = {
   title: string;
   area?: string;
@@ -24,6 +37,12 @@ type PlannedTask = {
   course?: string;
   nextAction?: string;
   dueDate?: string;
+  courseCode?: string;
+  estimatedHours?: number;
+  assessment?: string;
+  recurrence?: string;
+  notes?: string;
+  deliverable?: boolean;
   minutes?: number;
   checked: boolean;
 };
@@ -96,12 +115,18 @@ export function PlannerAssistant({
 }) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
+  const [sources, setSources] = useState<ResearchSource[]>([]);
   const [error, setError] = useState("");
   const [pendingChange, setPendingChange] = useState<PlannerChange | null>(null);
   const [breakdown, setBreakdown] = useState<BreakdownPlan | null>(null);
   const [dayPlan, setDayPlan] = useState<DayPlan | null>(null);
+  const [databaseDraft, setDatabaseDraft] = useState<DatabaseDraftPlan | null>(null);
   const [plannedTasks, setPlannedTasks] = useState<PlannedTask[]>([]);
   const [loading, setLoading] = useState(false);
+  const [assistantMode, setAssistantMode] = useState<AssistantMode>("plan");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [targetLanguage, setTargetLanguage] = useState("Afaan Oromo");
+  const [sourceLanguage, setSourceLanguage] = useState("");
   const [planningDate, setPlanningDate] = useState(todayInPlannerTimeZone());
   const [availableHours, setAvailableHours] = useState(6);
   const [studyStart, setStudyStart] = useState("08:30");
@@ -115,41 +140,61 @@ export function PlannerAssistant({
     setLoading(true);
     setError("");
     setAnswer("");
+    setSources([]);
     setPendingChange(null);
     setBreakdown(null);
     setDayPlan(null);
+    setDatabaseDraft(null);
     setPlannedTasks([]);
     try {
       const timezone = PLANNER_TIME_ZONE;
       const date = mode === "day" ? planningDate : todayInPlannerTimeZone();
+      const useUpload = (mode === "analyze" || mode === "autofill") && Boolean(selectedFile);
+      const body: BodyInit = useUpload
+        ? (() => {
+            const form = new FormData();
+            form.set("mode", mode);
+            form.set("question", prompt);
+            form.set("file", selectedFile!);
+            return form;
+          })()
+        : JSON.stringify({
+            mode,
+            question: prompt,
+            ...(mode === "translate" ? { language: targetLanguage, sourceLanguage } : {}),
+            ...(taskId ? { taskId } : {}),
+            ...(mode === "day" || mode === "plan" ? { date, timezone } : {}),
+            ...(mode === "day" ? {
+              planning: {
+                availableHours,
+                studyStart,
+                studyEnd,
+                selectedAreas,
+                selectedCourses,
+                energyLevel,
+                instructions: planningInstructions,
+              },
+            } : {}),
+          });
       const response = await fetch("/api/assistant", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode,
-          question: prompt,
-          ...(taskId ? { taskId } : {}),
-          ...(mode === "day" || mode === "plan" ? { date, timezone } : {}),
-          ...(mode === "day" ? {
-            planning: {
-              availableHours,
-              studyStart,
-              studyEnd,
-              selectedAreas,
-              selectedCourses,
-              energyLevel,
-              instructions: planningInstructions,
-            },
-          } : {}),
-        }),
+        ...(!useUpload ? { headers: { "Content-Type": "application/json" } } : {}),
+        body,
       });
       const result = await response.json() as AssistantResponse;
       if (!response.ok) throw new Error(result.error ?? "The planner assistant could not respond.");
-      if (mode === "plan" || mode === "breakdown" || mode === "day") {
+      if (mode === "research") {
+        if (!result.answer) throw new Error("The research assistant returned no answer.");
+        setAnswer(result.answer);
+        setSources(result.sources ?? []);
+      } else if (mode === "plan" || mode === "breakdown" || mode === "day" || mode === "autofill") {
         const plan = result.plan;
         if (!plan) throw new Error(result.error ?? "The planner assistant returned no proposal.");
         if (plan.action === "answer") {
           setAnswer(plan.answer);
+        } else if (plan.action === "bulk_create") {
+          setDatabaseDraft(plan);
+          setPlannedTasks(plan.items.map((item) => ({ ...item, checked: true })));
         } else if (plan.action === "create" || plan.action === "update" || plan.action === "bulk_update") {
           setPendingChange(plan);
         } else if (plan.action === "breakdown") {
@@ -182,11 +227,15 @@ export function PlannerAssistant({
     } finally {
       setLoading(false);
     }
-  }, [availableHours, energyLevel, options, planningDate, planningInstructions, question, selectedAreas, selectedCourses, studyEnd, studyStart, tasks]);
+  }, [availableHours, energyLevel, options, planningDate, planningInstructions, question, selectedAreas, selectedCourses, selectedFile, sourceLanguage, studyEnd, studyStart, targetLanguage, tasks]);
 
   function submitInstruction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void ask("plan");
+    if (assistantMode === "analyze" && !selectedFile) {
+      setError("Choose a file to analyze.");
+      return;
+    }
+    void ask(assistantMode);
   }
 
   function runQuickAction(action: typeof quickActions[number]["id"]) {
@@ -343,8 +392,16 @@ export function PlannerAssistant({
             priority: item.priority,
             area: item.area,
             course: item.course,
-            dueDate: item.dueDate,
+            dueDate: item.dueDate && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(item.dueDate)
+              ? plannerLocalTimeToIso(item.dueDate.slice(0, 10), item.dueDate.slice(11, 16))
+              : item.dueDate,
             nextAction: item.nextAction,
+            courseCode: item.courseCode,
+            estimatedHours: item.estimatedHours,
+            assessment: item.assessment,
+            recurrence: item.recurrence,
+            notes: item.notes,
+            deliverable: item.deliverable,
           }),
         });
         const result = await response.json() as TaskMutationResponse;
@@ -358,6 +415,7 @@ export function PlannerAssistant({
       setAnswer(`Added ${saved} task${saved === 1 ? "" : "s"} to your Notion planner.`);
       setBreakdown(null);
       setDayPlan(null);
+      setDatabaseDraft(null);
       setPlannedTasks([]);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Could not save the selected tasks.");
@@ -375,13 +433,14 @@ export function PlannerAssistant({
         return task ? [task] : [];
       })
     : [];
+  const modeDisabled = disabled && (assistantMode === "plan" || assistantMode === "autofill");
 
   return (
     <section className="panel assistant-panel" id="planner-assistant" aria-labelledby="assistant-title">
       <div className="panel-heading">
         <div>
           <h2 id="assistant-title">Planner assistant</h2>
-          <p>Plan your day, break down a task, or give me an instruction.</p>
+          <p>Research, write, translate, analyze files, and work with your planner.</p>
         </div>
         <span className="chart-heading-icon tone-violet"><Sparkles size={15} /></span>
       </div>
@@ -399,6 +458,36 @@ export function PlannerAssistant({
         </div>
         <p>Calendar dates and study hours use {PLANNER_TIME_ZONE}.</p>
       </details>
+      <div className="assistant-capability-controls">
+        <label>
+          <span>Assistant tool</span>
+          <select value={assistantMode} onChange={(event) => {
+            setAssistantMode(event.target.value as AssistantMode);
+            setError("");
+          }}>
+            <option value="plan">Planner: ask, create, or edit tasks</option>
+            <option value="research">Web research (with sources)</option>
+            <option value="writing">Writing assistant</option>
+            <option value="autofill">Generate / autofill Notion items</option>
+            <option value="analyze">Analyze an uploaded file</option>
+            <option value="translate">Translate text</option>
+          </select>
+        </label>
+        {assistantMode === "translate" && (
+          <>
+            <label><span>Translate to</span><input value={targetLanguage} maxLength={80} onChange={(event) => setTargetLanguage(event.target.value)} placeholder="Target language" /></label>
+            <label><span>From (optional)</span><input value={sourceLanguage} maxLength={80} onChange={(event) => setSourceLanguage(event.target.value)} placeholder="Detect automatically" /></label>
+          </>
+        )}
+        {(assistantMode === "analyze" || assistantMode === "autofill") && (
+          <label className="assistant-file-picker">
+            <span>{assistantMode === "analyze" ? "File to analyze" : "Source file (optional)"}</span>
+            <input type="file" accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.csv,.xlsx"
+              onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
+            <small>{selectedFile ? `${selectedFile.name} · ${(selectedFile.size / 1024).toFixed(0)} KB` : "PDF, DOCX, text, image, CSV, or XLSX · up to 3 MB"}</small>
+          </label>
+        )}
+      </div>
       <div className="assistant-quick-actions">
         {quickActions.map(({ id, label, icon: Icon }) => (
           <button type="button" key={id} onClick={() => runQuickAction(id)} disabled={disabled || loading || Boolean(pendingChange) || Boolean(plannedTasks.length)}>
@@ -414,14 +503,33 @@ export function PlannerAssistant({
         <form className="assistant-question" onSubmit={submitInstruction}>
           <label className="sr-only" htmlFor="assistant-question">Ask or instruct your planner assistant</label>
           <input id="assistant-question" value={question} onChange={(event) => setQuestion(event.target.value)}
-            maxLength={1000} placeholder="Ask, add a task, or change a deadline..." required disabled={disabled || loading || Boolean(pendingChange) || Boolean(plannedTasks.length)} />
-          <button type="submit" aria-label="Send planner instruction" disabled={disabled || loading || Boolean(pendingChange) || Boolean(plannedTasks.length) || !question.trim()}>
+            maxLength={assistantMode === "translate" ? 8000 : assistantMode === "writing" || assistantMode === "autofill" ? 2000 : 1000}
+            placeholder={
+              assistantMode === "research" ? "What would you like to research?" :
+              assistantMode === "writing" ? "What would you like to draft, revise, or summarize?" :
+              assistantMode === "translate" ? "Enter text to translate..." :
+              assistantMode === "analyze" ? "What should I look for in the uploaded file?" :
+              assistantMode === "autofill" ? "What records should I extract or create?" :
+              "Ask, add a task, or change a deadline..."
+            } required disabled={modeDisabled || loading || Boolean(pendingChange) || Boolean(plannedTasks.length)} />
+          <button type="submit" aria-label="Send planner instruction" disabled={modeDisabled || loading || Boolean(pendingChange) || Boolean(plannedTasks.length) || !question.trim()}>
             {loading ? <LoaderCircle size={14} className="spin" /> : <Send size={14} />}
           </button>
         </form>
       </div>
-      {disabled && <p className="assistant-hint">Connect to Notion and load your tasks to use the assistant.</p>}
+      {modeDisabled && <p className="assistant-hint">Connect to Notion and load your tasks to plan or autofill database items.</p>}
       {answer && <div className="assistant-response" role="status" aria-live="polite"><AssistantMarkdown text={answer} /></div>}
+      {sources.length > 0 && (
+        <div className="assistant-sources" aria-label="Web research sources">
+          <strong>Sources</strong>
+          {sources.map((source, index) => (
+            <a key={`${source.url}-${index}`} href={source.url} target="_blank" rel="noreferrer">
+              <span>[{index + 1}] {source.title}</span>
+              {source.snippet && <small>{source.snippet}</small>}
+            </a>
+          ))}
+        </div>
+      )}
       {pendingChange && (
         <div className="assistant-proposal" aria-live="polite">
           <div className="assistant-proposal-heading">
@@ -501,6 +609,34 @@ export function PlannerAssistant({
             onSave={() => void saveSelectedTasks()} label="Add selected steps to Notion" />
         </div>
       )}
+      {databaseDraft && (
+        <div className="assistant-bulk-plan">
+          <h3>{databaseDraft.summary}</h3>
+          <p>Review each extracted Notion item. Only checked items are saved after you confirm.</p>
+          {plannedTasks.map((item, index) => (
+            <label className="assistant-step" key={`${item.title}-${index}`}>
+              <input type="checkbox" checked={item.checked} onChange={(event) => updatePlannedTask(index, event.target.checked)} />
+              <span>
+                <strong>{item.title}</strong>
+                <small>{[
+                  item.courseCode,
+                  item.course,
+                  item.assessment,
+                  item.estimatedHours !== undefined ? `${item.estimatedHours} hours` : undefined,
+                  item.dueDate,
+                  item.deliverable ? "Deliverable" : undefined,
+                ].filter(Boolean).join(" · ") || "No additional fields inferred"}</small>
+                {item.nextAction && <small>Next action: {item.nextAction}</small>}
+                {item.recurrence && <small>Recurrence: {item.recurrence}</small>}
+                {item.notes && <small>{item.notes}</small>}
+              </span>
+            </label>
+          ))}
+          <PlanActions count={plannedTasks.filter((item) => item.checked).length} loading={loading}
+            onCancel={() => { setDatabaseDraft(null); setPlannedTasks([]); }}
+            onSave={() => void saveSelectedTasks()} label="Add selected items to Notion" />
+        </div>
+      )}
       {dayPlan && (
         <div className="assistant-bulk-plan assistant-day-plan">
           <h3>{dayPlan.summary}</h3>
@@ -529,7 +665,9 @@ export function PlannerAssistant({
         </div>
       )}
       {error && <div className="assistant-response assistant-error" role="alert">{error}</div>}
-      <p className="assistant-privacy">Planner task details are sent to Google Gemini. Changes and generated tasks are only written to Notion after you confirm.</p>
+      <p className="assistant-privacy">
+        Planner details go to Google Gemini only for planner actions. Research queries and search snippets go to Tavily and Gemini; uploaded files are processed temporarily and not stored by this app. Notion changes are previewed and require your confirmation.
+      </p>
     </section>
   );
 }

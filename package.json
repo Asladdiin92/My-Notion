@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.9",
+    "exceljs": "^4.4.0",
     "lucide-react": "^0.468.0",
+    "mammoth": "^1.13.0",
     "next": "^15.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -28,6 +30,9 @@
     "typescript": "^5.7.3"
   },
   "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    },
     "postcss": "^8.5.23"
   }
 }

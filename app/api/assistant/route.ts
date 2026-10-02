@@ -5,12 +5,18 @@ import {
   getPlannerAssistantAnswer,
   getPlannerAssistantBreakdown,
   getPlannerAssistantDayPlan,
+  getPlannerDatabaseDraft,
+  getPlannerFileAnalysis,
   getPlannerAssistantPlan,
+  getPlannerResearchAnswer,
+  getPlannerTranslation,
+  getPlannerWritingAnswer,
 } from "@/lib/gemini";
 import { fetchNotionTaskOptions, fetchNotionTasks } from "@/lib/notion";
 import { convertPrayerTimesToTimezone, fetchHararPrayerTimes } from "@/lib/prayer-times";
 import { isSameOrigin } from "@/lib/task-request";
 import { PLANNER_TIME_ZONE } from "@/lib/planner-datetime";
+import { extractAssistantFile } from "@/lib/assistant-files";
 
 export const dynamic = "force-dynamic";
 
@@ -28,33 +34,79 @@ export async function POST(request: Request) {
     });
   }
   const contentLength = Number(request.headers.get("content-length") ?? 0);
-  if (contentLength > 8_192) {
-    return NextResponse.json({ error: "The assistant request is too large." }, { status: 413 });
+  const multipart = request.headers.get("content-type")?.toLowerCase().startsWith("multipart/form-data") ?? false;
+  if (!Number.isFinite(contentLength) || contentLength < 0) {
+    return NextResponse.json({ error: "The assistant request has an invalid size." }, { status: 400 });
+  }
+  if (contentLength > (multipart ? 4 * 1024 * 1024 : 40 * 1024)) {
+    return NextResponse.json({ error: "The assistant request is too large. File uploads are limited to 3 MB." }, { status: 413 });
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Send a valid assistant request." }, { status: 400 });
-  }
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return NextResponse.json({ error: "Send a valid assistant request." }, { status: 400 });
+  let values: Record<string, unknown>;
+  let uploadedFile: Awaited<ReturnType<typeof extractAssistantFile>> | undefined;
+  if (multipart) {
+    try {
+      const form = await request.formData();
+      const allowedFormFields = new Set(["mode", "question", "language", "sourceLanguage", "file"]);
+      if (Array.from(form.keys()).some((key) => !allowedFormFields.has(key)) ||
+          ["mode", "question", "language", "sourceLanguage"].some((key) => form.getAll(key).length > 1)) {
+        return NextResponse.json({ error: "The assistant upload contains unsupported or duplicate fields." }, { status: 400 });
+      }
+      values = Object.fromEntries(["mode", "question", "language", "sourceLanguage"].flatMap((name) => {
+        const value = form.get(name);
+        return typeof value === "string" ? [[name, value]] : [];
+      }));
+      const files = form.getAll("file");
+      if (files.length !== 1 || typeof files[0] === "string") {
+        return NextResponse.json({ error: "Choose exactly one file to analyze." }, { status: 400 });
+      }
+      uploadedFile = await extractAssistantFile(files[0]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The uploaded file could not be read.";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+  } else {
+    if (contentLength > 40 * 1024) {
+      return NextResponse.json({ error: "The assistant request is too large." }, { status: 413 });
+    }
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Send a valid assistant request." }, { status: 400 });
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Send a valid assistant request." }, { status: 400 });
+    }
+    values = body as Record<string, unknown>;
   }
 
-  const values = body as Record<string, unknown>;
-  if (Object.keys(values).some((key) => !["mode", "question", "date", "timezone", "taskId", "planning"].includes(key))) {
+  if (Object.keys(values).some((key) => !["mode", "question", "date", "timezone", "taskId", "planning", "language", "sourceLanguage"].includes(key))) {
     return NextResponse.json({ error: "The request contains an unsupported field." }, { status: 400 });
   }
-  const modes = ["suggest", "ask", "plan", "breakdown", "day"];
+  const modes = ["suggest", "ask", "plan", "breakdown", "day", "research", "writing", "translate", "analyze", "autofill"];
   if (typeof values.mode !== "string" || !modes.includes(values.mode)) {
     return NextResponse.json({ error: "Choose a valid assistant action." }, { status: 400 });
   }
-  if (["ask", "plan"].includes(values.mode) && (typeof values.question !== "string" || !values.question.trim())) {
+  if (multipart && values.mode !== "analyze" && values.mode !== "autofill") {
+    return NextResponse.json({ error: "Files can only be used for file analysis or database autofill." }, { status: 400 });
+  }
+  if ((["ask", "plan", "research", "writing", "translate", "analyze", "autofill"].includes(values.mode)) &&
+      (typeof values.question !== "string" || !values.question.trim())) {
     return NextResponse.json({ error: "Enter an instruction or question for your planner." }, { status: 400 });
   }
-  if (values.question !== undefined && (typeof values.question !== "string" || values.question.length > 1000)) {
-    return NextResponse.json({ error: "Instructions must be 1,000 characters or fewer." }, { status: 400 });
+  const questionLimit = values.mode === "translate" ? 8000 : values.mode === "writing" || values.mode === "autofill" ? 2000 : 1000;
+  if (values.question !== undefined &&
+      (typeof values.question !== "string" || values.question.length > questionLimit)) {
+    return NextResponse.json({ error: `Instructions must be ${questionLimit.toLocaleString()} characters or fewer.` }, { status: 400 });
+  }
+  if (values.mode === "analyze" && !uploadedFile) {
+    return NextResponse.json({ error: "Upload a supported file to analyze." }, { status: 400 });
+  }
+  if (values.mode === "translate" &&
+      (typeof values.language !== "string" || !values.language.trim() || values.language.length > 80 ||
+       (values.sourceLanguage !== undefined && (typeof values.sourceLanguage !== "string" || values.sourceLanguage.length > 80)))) {
+    return NextResponse.json({ error: "Choose a valid target language for translation." }, { status: 400 });
   }
   if (values.taskId !== undefined &&
       (typeof values.taskId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(values.taskId))) {
@@ -119,7 +171,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const tasks = await fetchNotionTasks();
+    const needsPlannerData = ["suggest", "ask", "plan", "breakdown", "day", "autofill"].includes(values.mode as string);
+    const tasks = needsPlannerData ? await fetchNotionTasks() : [];
     if (values.mode === "plan") {
       const options = await fetchNotionTaskOptions();
       const plan = await getPlannerAssistantPlan(
@@ -151,11 +204,38 @@ export async function POST(request: Request) {
       const plan = await getPlannerAssistantDayPlan(tasks, values.date as string, values.timezone as string, prayerTimes, dayPreferences);
       return NextResponse.json({ plan }, { headers: { "Cache-Control": "no-store" } });
     }
+    if (values.mode === "research") {
+      const research = await getPlannerResearchAnswer(values.question as string);
+      return NextResponse.json(research, { headers: { "Cache-Control": "no-store" } });
+    }
+    if (values.mode === "writing") {
+      const answer = await getPlannerWritingAnswer(values.question as string);
+      return NextResponse.json({ answer }, { headers: { "Cache-Control": "no-store" } });
+    }
+    if (values.mode === "translate") {
+      const answer = await getPlannerTranslation(
+        values.question as string,
+        values.language as string,
+        values.sourceLanguage as string | undefined,
+      );
+      return NextResponse.json({ answer }, { headers: { "Cache-Control": "no-store" } });
+    }
+    if (values.mode === "analyze") {
+      const answer = await getPlannerFileAnalysis(uploadedFile!, values.question as string);
+      return NextResponse.json({ answer }, { headers: { "Cache-Control": "no-store" } });
+    }
+    if (values.mode === "autofill") {
+      const options = await fetchNotionTaskOptions();
+      const plan = await getPlannerDatabaseDraft(values.question as string, uploadedFile, tasks, options);
+      return NextResponse.json({ plan }, { headers: { "Cache-Control": "no-store" } });
+    }
     const answer = await getPlannerAssistantAnswer(values.mode as "suggest" | "ask", values.question as string | undefined, tasks);
     return NextResponse.json({ answer }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "The planner assistant could not respond.";
-    const status = message.startsWith("Add GEMINI_API_KEY") || message.startsWith("Add NOTION_") ? 503 : 502;
+    const status = message.startsWith("Add GEMINI_API_KEY") ||
+      message.startsWith("Add NOTION_") ||
+      message.startsWith("Add TAVILY_API_KEY") ? 503 : 502;
     return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
   }
 }

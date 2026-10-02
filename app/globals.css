@@ -163,6 +163,18 @@ button { color: inherit; }
 .assistant-planning-grid select[multiple] { min-height: 60px; }
 .assistant-planning-grid textarea { min-height: 44px; resize: vertical; }
 .assistant-planning-instructions { grid-column: span 2; }
+.assistant-capability-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 8px; margin-top: 12px; }
+.assistant-capability-controls label { display: grid; min-width: 0; gap: 4px; }
+.assistant-capability-controls label > span { color: #6d7067; font-size: 8px; font-weight: 500; }
+.assistant-capability-controls input, .assistant-capability-controls select { width: 100%; min-width: 0; min-height: 30px; padding: 5px 8px; border: 1px solid #e8e9e4; border-radius: 5px; background: #fff; color: #555750; font-size: 9px; }
+.assistant-capability-controls .assistant-file-picker { grid-column: span 2; }
+.assistant-capability-controls .assistant-file-picker input { padding: 4px; }
+.assistant-file-picker small { color: #969890; font-size: 8px; }
+.assistant-sources { display: grid; gap: 7px; margin-top: 10px; padding: 10px 12px; border: 1px solid #e8e9e4; border-radius: 6px; background: #fff; }
+.assistant-sources > strong { color: #66745f; font-size: 9px; }
+.assistant-sources > a { display: grid; gap: 3px; color: #526c4b; font-size: 9px; text-decoration: none; }
+.assistant-sources > a:hover span { text-decoration: underline; }
+.assistant-sources small { color: #85877f; font-size: 8px; line-height: 1.5; }
 .assistant-controls { display: flex; align-items: stretch; gap: 9px; margin-top: 14px; }
 .assistant-suggest { display: inline-flex; min-height: 34px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 6px; padding: 0 11px; border: 1px solid #71866a; border-radius: 6px; background: #74886c; color: #fff; cursor: pointer; font-size: 9px; font-weight: 600; }
 .assistant-suggest:hover:not(:disabled) { background: #627958; }
@@ -528,7 +540,8 @@ button { color: inherit; }
   .status-chart-row { height: 148px; }
   .content-grid { gap: 10px; }
   .assistant-controls { align-items: stretch; flex-direction: column; }
-  .assistant-planning-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .assistant-planning-grid, .assistant-capability-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .assistant-capability-controls .assistant-file-picker { grid-column: 1 / -1; }
   .assistant-suggest { align-self: flex-start; }
   .calendar-panel, .areas-panel { padding: 14px 13px; }
   .task-table { min-width: 710px; }

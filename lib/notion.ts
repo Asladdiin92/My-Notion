@@ -177,6 +177,7 @@ export async function fetchNotionTaskOptions() {
     ["semester", "NOTION_SEMESTER_PROPERTY", "Semester", "select"],
     ["timeBlock", "NOTION_TIME_BLOCK_PROPERTY", "Time Block", "rich_text"],
     ["venueLink", "NOTION_VENUE_LINK_PROPERTY", "Venue Link", "link"],
+    ["nextAction", "NOTION_NEXT_ACTION_PROPERTY", "Next Action", "rich_text"],
     ["dateEnd", "NOTION_DUE_DATE_PROPERTY", "Date", "date"],
     ["deliverable", "NOTION_DELIVERABLE_PROPERTY", "Deliverable", "checkbox"],
   ];

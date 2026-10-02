@@ -60,11 +60,11 @@ Next.js middleware + API access check (allowlisted verified email)
         │ POST /api/tasks           create a planner item
         │ PATCH /api/tasks/:id      edit a planner item
         │ DELETE /api/tasks/:id     archive a planner item
-        │ POST /api/assistant      ask, get suggestions, or prepare a change preview
+        │ POST /api/assistant      planner, research, writing, translation, file tools
         ▼
 Next.js server (API routes + Notion mapping)
         │
-        │ NOTION_API_KEY / NOTION_TOKEN / GEMINI_API_KEY (server-only)
+        │ NOTION_API_KEY / NOTION_TOKEN / GEMINI_API_KEY / TAVILY_API_KEY (server-only)
         │ NOTION_DATABASE_ID
         ▼
 Notion API (your existing planner database)
@@ -312,18 +312,39 @@ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
 CLERK_SECRET_KEY=sk_...
 ALLOWED_EMAILS=your_verified_email@example.com
 GEMINI_API_KEY=your_gemini_api_key
+TAVILY_API_KEY=your_tavily_api_key
 ```
 
 The email must be verified in Clerk. `ALLOWED_EMAILS` is enforced server-side
-by the API; do not expose it as a `NEXT_PUBLIC_` variable. The Gemini key is
-used only by the server-side planner assistant; never add a `NEXT_PUBLIC_`
-prefix to it.
+by the API; do not expose it as a `NEXT_PUBLIC_` variable. Gemini and Tavily
+keys are used only by server-side routes; never add a `NEXT_PUBLIC_` prefix to
+them. `TAVILY_API_KEY` is needed only for live web research. Add it to
+`.env.local` and to Vercel's server environment for production, then restart
+or redeploy. Never paste secret keys into assistant prompts or commit them.
 
 The **Planner assistant** includes quick actions to plan the day, decompose a
 task, identify urgent work, or get a motivational nudge. Its coach rules put
 faith/prayer first, then urgent University deadlines, Coding Lab milestones,
 and Freelance Work; suggestions include estimated time, an area, and a
 concrete next action.
+
+Choose a tool from the assistant selector:
+
+- **Web research** searches through Tavily, then asks Gemini to synthesize the
+  result snippets with numbered source references and links. Search queries go
+  to Tavily; returned snippets go to Gemini. Research requires `TAVILY_API_KEY`.
+- **Writing assistant** drafts, revises, outlines, or summarizes text without
+  loading or changing the Notion task list.
+- **Translate text** translates into the target language you enter.
+- **Analyze an uploaded file** accepts PDF, DOCX, TXT, Markdown, PNG/JPEG,
+  CSV, and XLSX files up to 3 MB. Files are processed temporarily for the
+  request and not saved by this app; their contents may be sent to Gemini.
+  DOCX and spreadsheets are text-extracted on the server, while PDF/image
+  content is sent to Gemini as an attachment.
+- **Generate/autofill Notion items** drafts rows from pasted notes or an
+  uploaded file. Review and select the rows before confirming the write.
+  Multi-item creation is sent to Notion one item at a time and may partially
+  succeed if Notion reports an error.
 
 The assistant can also interpret instructions such as “add a biology review
 task tomorrow” or “move my biology deadline to Friday.” For create/edit
@@ -335,7 +356,8 @@ a time; a Notion error can therefore leave a partial batch. It asks for
 clarification if an edit does not clearly match a task. Task breakdown steps
 and daily schedule blocks are checkable, and the selected items are only
 created in Notion after confirmation. Archiving remains a manual task-table
-action.
+action. Planner data is sent to Gemini only for planner-specific tools;
+writing, translation, and file analysis do not load the Notion task list.
 
 Daily plans cover 08:30–18:00 in the device time zone and use prayer times for
 Harar, Ethiopia from AlAdhan's by-city service (its default calculation
@@ -406,7 +428,8 @@ Calendar, Progress, and AI planner sections; the PostgreSQL-specific
 1. Push the project to a Git repository you control and import it into Vercel.
 2. In the Vercel project settings, add `NOTION_API_KEY` (or `NOTION_TOKEN`),
    `NOTION_DATABASE_ID`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
-   `CLERK_SECRET_KEY`, `ALLOWED_EMAILS`, and `GEMINI_API_KEY` under
+   `CLERK_SECRET_KEY`, `ALLOWED_EMAILS`, `GEMINI_API_KEY`, and
+   `TAVILY_API_KEY` under
    **Environment Variables**. Use the Clerk keys from your Clerk application;
    set values for the Vercel environments you will use.
 3. Add property-name overrides if necessary. Ensure the allowlisted email is
@@ -425,6 +448,11 @@ the environment variables on its server to call Notion.
 - `GEMINI_API_KEY` is sent to Google only from the server. Planner task details
   are sent to Gemini when using the assistant; do not use it if you do not want
   that data processed by Google.
+- `TAVILY_API_KEY` is sent only from the server. Research queries are sent to
+  Tavily and retrieved snippets are passed to Gemini for a cited summary.
+- Uploaded files are limited to 3 MB and processed for the current request;
+  the application does not save them. Gemini may receive the file content for
+  analysis or database drafting.
 - Day planning sends the selected date and device time zone to this app's
   server; the server requests prayer times for Harar from AlAdhan. No precise
   device location is collected.
@@ -443,6 +471,7 @@ the environment variables on its server to call Notion.
 | “Add `NOTION_API_KEY` and `NOTION_DATABASE_ID`...” | Fill both values in `.env.local` and restart `npm run dev`. `NOTION_TOKEN` is also accepted instead of `NOTION_API_KEY`. |
 | Clerk reports missing keys | Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` locally and in the Vercel project, then restart or redeploy. |
 | Planner assistant reports a missing Gemini key | Set `GEMINI_API_KEY` in `.env.local` or the Vercel environment, then restart or redeploy. |
+| Web research reports a missing Tavily key | Add `TAVILY_API_KEY` to `.env.local` or the Vercel environment, then restart or redeploy. |
 | Gemini rejects the API key | Check that `GEMINI_API_KEY` is valid and that the Gemini API is enabled for its Google project. |
 | Sign-in works but planner access is denied | Verify the signed-in email in Clerk and add the exact address to server-side `ALLOWED_EMAILS`. |
 | Notion returns 401 | Check that the integration secret is correct and active. |
