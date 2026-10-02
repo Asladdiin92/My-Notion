@@ -76,6 +76,7 @@ const fieldLabels: Record<ChangeField, string> = {
   course: "Course",
   dueDate: "Due date",
   nextAction: "Next action",
+  recurrence: "Recurrence",
 };
 
 export function PlannerAssistant({
@@ -149,7 +150,7 @@ export function PlannerAssistant({
         if (!plan) throw new Error(result.error ?? "The planner assistant returned no proposal.");
         if (plan.action === "answer") {
           setAnswer(plan.answer);
-        } else if (plan.action === "create" || plan.action === "update") {
+        } else if (plan.action === "create" || plan.action === "update" || plan.action === "bulk_update") {
           setPendingChange(plan);
         } else if (plan.action === "breakdown") {
           setBreakdown(plan);
@@ -243,6 +244,45 @@ export function PlannerAssistant({
     setError("");
     try {
       const fields = pendingChange.fields;
+      if (pendingChange.action === "bulk_update") {
+        const targets = pendingChange.taskIds.map((id) => tasks.find((item) => item.id === id));
+        if (targets.some((item) => !item)) {
+          throw new Error("One or more tasks are no longer in the current planner list. Refresh and try again.");
+        }
+        let saved = 0;
+        for (const target of targets) {
+          const targetTask = target!;
+          const dueDate = fields.dueDate && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(fields.dueDate)
+            ? plannerLocalTimeToIso(fields.dueDate.slice(0, 10), fields.dueDate.slice(11, 16))
+            : fields.dueDate;
+          const response = await fetch(`/api/tasks/${encodeURIComponent(targetTask.id)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: fields.title ?? targetTask.title,
+              type: fields.type ?? targetTask.type,
+              status: fields.status ?? targetTask.status,
+              priority: fields.priority ?? targetTask.priority,
+              area: fields.area ?? targetTask.area,
+              course: fields.course ?? targetTask.course,
+              dueDate: dueDate ?? targetTask.dueDate ?? "",
+              dateEnd: targetTask.dateEnd ?? "",
+              nextAction: fields.nextAction ?? targetTask.nextAction,
+              ...(fields.recurrence !== undefined ? { recurrence: fields.recurrence } : {}),
+            }),
+          });
+          const result = await response.json() as TaskMutationResponse;
+          if (!response.ok || !result.ok || !result.task) {
+            throw new Error(`Updated ${saved} of ${targets.length} tasks before an error: ${result.error ?? "Could not update the next task."}`);
+          }
+          onTaskSaved(result.task);
+          saved += 1;
+        }
+        setPendingChange(null);
+        setQuestion("");
+        setAnswer(`Updated ${saved} tasks in your Notion planner.`);
+        return;
+      }
       const dueDate = fields.dueDate && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(fields.dueDate)
         ? plannerLocalTimeToIso(fields.dueDate.slice(0, 10), fields.dueDate.slice(11, 16))
         : fields.dueDate;
@@ -258,6 +298,7 @@ export function PlannerAssistant({
             dueDate: dueDate ?? task!.dueDate ?? "",
             dateEnd: task!.dateEnd ?? "",
             nextAction: fields.nextAction ?? task!.nextAction,
+            ...(fields.recurrence !== undefined ? { recurrence: fields.recurrence } : {}),
           };
       const response = await fetch(
         pendingChange.action === "create" ? "/api/tasks" : `/api/tasks/${encodeURIComponent(task!.id)}`,
@@ -328,6 +369,12 @@ export function PlannerAssistant({
   const pendingTask = pendingChange?.action === "update"
     ? tasks.find((task) => task.id === pendingChange.taskId)
     : undefined;
+  const pendingTasks = pendingChange?.action === "bulk_update"
+    ? pendingChange.taskIds.flatMap((id) => {
+        const task = tasks.find((item) => item.id === id);
+        return task ? [task] : [];
+      })
+    : [];
 
   return (
     <section className="panel assistant-panel" id="planner-assistant" aria-labelledby="assistant-title">
@@ -378,7 +425,13 @@ export function PlannerAssistant({
       {pendingChange && (
         <div className="assistant-proposal" aria-live="polite">
           <div className="assistant-proposal-heading">
-            <strong>Review this {pendingChange.action === "create" ? "new task" : "task update"}</strong>
+            <strong>
+              {pendingChange.action === "create"
+                ? "Review this new task"
+                : pendingChange.action === "bulk_update"
+                  ? `Review this update for ${pendingChange.taskIds.length} tasks`
+                  : "Review this task update"}
+            </strong>
             {pendingTask && <span>For: {pendingTask.title}</span>}
           </div>
           <p>{pendingChange.summary}</p>
@@ -401,11 +454,29 @@ export function PlannerAssistant({
               );
             })}
           </dl>
+          {pendingChange.action === "bulk_update" && (
+            <>
+              <ul className="assistant-bulk-targets">
+                {pendingTasks.map((target) => (
+                  <li key={target.id}>
+                    <strong>{target.title}</strong>
+                    <span>{target.area || target.type}{target.course ? ` · ${target.course}` : ""}</span>
+                    {pendingChange.fields.recurrence !== undefined && (
+                      <span>
+                        Recurrence: {target.recurrence || "None"} → {pendingChange.fields.recurrence || "Cleared"}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="assistant-bulk-warning">Tasks are saved one at a time, so a Notion error may leave some changes applied.</p>
+            </>
+          )}
           <div className="assistant-proposal-actions">
             <button className="assistant-cancel" type="button" onClick={() => setPendingChange(null)} disabled={loading}>
               <X size={13} /> Cancel
             </button>
-            <button className="assistant-confirm" type="button" onClick={() => void confirmChange()} disabled={loading || (pendingChange.action === "update" && !pendingTask)}>
+            <button className="assistant-confirm" type="button" onClick={() => void confirmChange()} disabled={loading || (pendingChange.action === "update" && !pendingTask) || (pendingChange.action === "bulk_update" && pendingTasks.length !== pendingChange.taskIds.length)}>
               {loading ? <LoaderCircle size={13} className="spin" /> : <Check size={13} />}
               Confirm and {pendingChange.action === "create" ? "create" : "save"}
             </button>

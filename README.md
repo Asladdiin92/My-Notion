@@ -328,10 +328,14 @@ concrete next action.
 The assistant can also interpret instructions such as “add a biology review
 task tomorrow” or “move my biology deadline to Friday.” For create/edit
 instructions, it previews the fields and makes no Notion change until you
-select **Confirm**. It asks for clarification if an edit does not clearly
-match a task. Task breakdown steps and daily schedule blocks are checkable,
-and the selected items are only created in Notion after confirmation.
-Archiving remains a manual task-table action.
+select **Confirm**. Recurrence is editable from assistant instructions. If you
+explicitly ask to update all/every matching task and multiple tasks match, the
+assistant previews each affected task and applies the confirmed updates one at
+a time; a Notion error can therefore leave a partial batch. It asks for
+clarification if an edit does not clearly match a task. Task breakdown steps
+and daily schedule blocks are checkable, and the selected items are only
+created in Notion after confirmation. Archiving remains a manual task-table
+action.
 
 Daily plans cover 08:30–18:00 in the device time zone and use prayer times for
 Harar, Ethiopia from AlAdhan's by-city service (its default calculation

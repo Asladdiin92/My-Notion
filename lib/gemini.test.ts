@@ -146,6 +146,104 @@ test("returns a proposed update only for a matching planner task", async () => {
   });
 });
 
+test("proposes a recurrence edit for one matching task", async () => {
+  mockGeminiText(JSON.stringify({
+    action: "update",
+    summary: "Repeat the prayer daily.",
+    taskId: task.id,
+    fields: { recurrence: "Repeat daily" },
+  }));
+
+  const plan = await getPlannerAssistantPlan(
+    "Set Fajr Prayer to repeat daily.",
+    [task],
+    {
+      types: [], statuses: [], priorities: [], areas: [], courses: [],
+      assessments: [], semesters: [], availableFields: ["recurrence"],
+    },
+  );
+
+  assert.deepEqual(plan, {
+    action: "update",
+    summary: "Repeat the prayer daily.",
+    taskId: task.id,
+    fields: { recurrence: "Repeat daily" },
+  });
+});
+
+test("proposes all matching task IDs for an explicitly requested bulk recurrence edit", async () => {
+  const secondTask = { ...task, id: "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff", title: "Fajr Prayer" };
+  const thirdTask = { ...task, id: "cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa", title: "Dhuhr Prayer" };
+  mockGeminiText(JSON.stringify({
+    action: "bulk_update",
+    summary: "Set all prayer tasks to repeat daily.",
+    taskIds: [task.id, secondTask.id, thirdTask.id],
+    fields: { recurrence: "Repeat daily" },
+  }));
+
+  const plan = await getPlannerAssistantPlan(
+    "Set every prayer task to repeat daily.",
+    [
+      { ...task, title: "Fajr Prayer" },
+      secondTask,
+      thirdTask,
+    ],
+    {
+      types: [], statuses: [], priorities: [], areas: [], courses: [],
+      assessments: [], semesters: [], availableFields: ["recurrence"],
+    },
+  );
+
+  assert.deepEqual(plan, {
+    action: "bulk_update",
+    summary: "Set all prayer tasks to repeat daily.",
+    taskIds: [task.id, secondTask.id, thirdTask.id],
+    fields: { recurrence: "Repeat daily" },
+  });
+});
+
+test("rejects bulk updates unless multiple tasks were explicitly requested", async () => {
+  mockGeminiText(JSON.stringify({
+    action: "bulk_update",
+    summary: "Set tasks to repeat daily.",
+    taskIds: [task.id, "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"],
+    fields: { recurrence: "Repeat daily" },
+  }));
+
+  await assert.rejects(
+    getPlannerAssistantPlan(
+      "Set Fajr Prayer to repeat daily.",
+      [task],
+      {
+        types: [], statuses: [], priorities: [], areas: [], courses: [],
+        assessments: [], semesters: [], availableFields: ["recurrence"],
+      },
+    ),
+    /validate the tasks for this bulk update/,
+  );
+});
+
+test("does not propose recurrence changes if Notion has no supported recurrence property", async () => {
+  mockGeminiText(JSON.stringify({
+    action: "update",
+    summary: "Repeat the task daily.",
+    taskId: task.id,
+    fields: { recurrence: "Repeat daily" },
+  }));
+
+  await assert.rejects(
+    getPlannerAssistantPlan(
+      "Set this task to repeat daily.",
+      [task],
+      {
+        types: [], statuses: [], priorities: [], areas: [], courses: [],
+        assessments: [], semesters: [], availableFields: ["notes"],
+      },
+    ),
+    /does not have a supported Recurrence property/,
+  );
+});
+
 test("rejects a proposed select value that is not in the Notion options", async () => {
   mockGeminiText(JSON.stringify({
     action: "create",

@@ -185,6 +185,12 @@ button { color: inherit; }
 .assistant-change-list dt { color: #92948c; }
 .assistant-change-list dd { min-width: 0; margin: 0; color: #555750; overflow-wrap: anywhere; }
 .assistant-old-value { color: #999b94; text-decoration: line-through; }
+.assistant-bulk-targets { display: grid; gap: 6px; max-height: 180px; overflow: auto; margin: 9px 0 0; padding: 8px 8px 8px 24px; border-radius: 5px; background: #f7f8f5; color: #777970; font-size: 9px; }
+.assistant-bulk-targets li { padding-left: 2px; }
+.assistant-bulk-targets li > strong, .assistant-bulk-targets li > span { display: block; }
+.assistant-bulk-targets li > strong { color: #555750; }
+.assistant-bulk-targets li > span { margin-top: 2px; }
+.assistant-proposal > .assistant-bulk-warning { margin: 7px 0 0; color: #8a7656; }
 .assistant-proposal-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 11px; padding-top: 9px; border-top: 1px solid #e9eee5; }
 .assistant-cancel, .assistant-confirm { display: inline-flex; min-height: 29px; align-items: center; justify-content: center; gap: 5px; padding: 0 9px; border: 1px solid #e2e5de; border-radius: 5px; background: #fff; color: #777970; cursor: pointer; font-size: 9px; }
 .assistant-cancel:hover:not(:disabled) { background: #f1f2ef; }
