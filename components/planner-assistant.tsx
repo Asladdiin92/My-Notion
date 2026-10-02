@@ -27,7 +27,7 @@ type AssistantResponse = {
 };
 type TaskMutationResponse = { ok: boolean; task?: Task; error?: string };
 type ChangeField = keyof PlannerChange["fields"];
-type AssistantMode = "suggest" | "ask" | "plan" | "breakdown" | "day" | "research" | "writing" | "translate" | "analyze" | "autofill";
+type AssistantMode = "suggest" | "ask" | "plan" | "breakdown" | "day" | "insights" | "research" | "writing" | "translate" | "analyze" | "autofill";
 type PlannedTask = {
   title: string;
   area?: string;
@@ -433,7 +433,8 @@ export function PlannerAssistant({
         return task ? [task] : [];
       })
     : [];
-  const modeDisabled = disabled && (assistantMode === "plan" || assistantMode === "autofill");
+  const modeDisabled = disabled &&
+    ["plan", "insights", "autofill"].includes(assistantMode);
 
   return (
     <section className="panel assistant-panel" id="planner-assistant" aria-labelledby="assistant-title">
@@ -466,6 +467,7 @@ export function PlannerAssistant({
             setError("");
           }}>
             <option value="plan">Planner: ask, create, or edit tasks</option>
+            <option value="insights">Analyze my planner</option>
             <option value="research">Web research (with sources)</option>
             <option value="writing">Writing assistant</option>
             <option value="autofill">Generate / autofill Notion items</option>
@@ -506,6 +508,7 @@ export function PlannerAssistant({
             maxLength={assistantMode === "translate" ? 8000 : assistantMode === "writing" || assistantMode === "autofill" ? 2000 : 1000}
             placeholder={
               assistantMode === "research" ? "What would you like to research?" :
+              assistantMode === "insights" ? "Ask about overdue work, workload, hours, areas, or courses..." :
               assistantMode === "writing" ? "What would you like to draft, revise, or summarize?" :
               assistantMode === "translate" ? "Enter text to translate..." :
               assistantMode === "analyze" ? "What should I look for in the uploaded file?" :

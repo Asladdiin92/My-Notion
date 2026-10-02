@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { todayInPlannerTimeZone } from "./planner-datetime";
 
 process.env.GEMINI_API_KEY ??= "gemini-test-key";
 
@@ -461,6 +462,35 @@ test("provides writing and translation tools without planner data", async () => 
   assert.equal(requests.length, 2);
   assert.match(JSON.stringify(requests[0]), /writing coach/);
   assert.match(JSON.stringify(requests[1]), /Afaan Oromo/);
+});
+
+test("analyzes complete workload metrics and discloses missing time-entry history", async () => {
+  const today = new Date(`${todayInPlannerTimeZone()}T00:00:00Z`);
+  today.setUTCDate(today.getUTCDate() - 12);
+  const overdueDate = today.toISOString().slice(0, 10);
+  let request: Record<string, unknown> = {};
+  globalThis.fetch = async (_input, init) => {
+    request = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return Response.json({ candidates: [{ content: { parts: [{ text: "Your recorded hours are totals, not week-by-week time entries." }] } }] });
+  };
+  const result = await getPlannerAssistantAnswer("insights", "How many tasks are over a week late?", [
+    { ...task, dueDate: overdueDate, estimatedHours: 4, actualHours: 2 },
+    { ...task, id: "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff", completed: true, actualHours: 1 },
+  ]);
+
+  assert.match(result, /not week-by-week/);
+  const bodyText = JSON.stringify(request);
+  assert.match(bodyText, /overdueMoreThanSevenDays/);
+  assert.match(bodyText, /recordedActualHours/);
+  assert.match(bodyText, /weeklyActualHoursAvailable/);
+  assert.match(bodyText, /byArea/);
+  assert.match(bodyText, /byCourse/);
+  const contents = request.contents as Array<{ parts: Array<{ text: string }> }>;
+  const prompt = contents[0].parts[0].text;
+  const analyticsJson = prompt.split("Complete computed analytics (JSON):\n")[1]?.split("\n\nPlanner data")[0];
+  assert.ok(analyticsJson);
+  const analytics = JSON.parse(analyticsJson) as { overdueTasks: Array<{ daysOverdue: number }> };
+  assert.equal(analytics.overdueTasks[0].daysOverdue, 12);
 });
 
 test("analyzes PDF or image content as Gemini inline data", async () => {

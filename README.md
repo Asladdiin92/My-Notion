@@ -330,6 +330,10 @@ concrete next action.
 
 Choose a tool from the assistant selector:
 
+- **Analyze my planner** answers workload questions from complete computed
+  totals by area, course, and type, due-today counts, and overdue ages. Actual
+  hours in this Notion schema are totals without dated time entries, so the
+  assistant cannot infer time spent for a specific week.
 - **Web research** searches through Tavily, then asks Gemini to synthesize the
   result snippets with numbered source references and links. Search queries go
   to Tavily; returned snippets go to Gemini. Research requires `TAVILY_API_KEY`.
@@ -345,6 +349,11 @@ Choose a tool from the assistant selector:
   uploaded file. Review and select the rows before confirming the write.
   Multi-item creation is sent to Notion one item at a time and may partially
   succeed if Notion reports an error.
+
+The Overview's **My Day** section highlights unfinished items due today,
+overdue items, and tasks whose recurrence explicitly says daily/every day.
+It prioritizes Critical/High work and provides quick complete/edit actions;
+the AI planner remains responsible for suggesting a full time-blocked plan.
 
 The assistant can also interpret instructions such as “add a biology review
 task tomorrow” or “move my biology deadline to Friday.” For create/edit

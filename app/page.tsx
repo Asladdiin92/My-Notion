@@ -96,9 +96,39 @@ function isOverdue(task: Task, today: string) {
   return !task.completed && Boolean(deadline) && plannerDateKey(deadline!) < today;
 }
 
+function isScheduledForDay(task: Task, today: string): boolean {
+  if (task.completed) return false;
+  if (task.dueDate) {
+    const start = plannerDateKey(task.dueDate);
+    const end = plannerDateKey(task.dateEnd || task.dueDate);
+    if (start <= today && today <= end) return true;
+  }
+  const recurrence = task.recurrence ?? "";
+  if (/\b(daily|every day|each day)\b/i.test(recurrence)) return true;
+  if (/\bweekdays\b/i.test(recurrence)) {
+    const weekday = new Date(`${today}T12:00:00Z`).getUTCDay();
+    return weekday >= 1 && weekday <= 5;
+  }
+  return false;
+}
+
+function getMyDayTasks(tasks: Task[], today: string): Task[] {
+  const priorityRank = (priority: string) =>
+    ({ Critical: 0, High: 1, Medium: 2, Low: 3 }[priority as "Critical" | "High" | "Medium" | "Low"] ?? 4);
+  return tasks.filter((task) => isScheduledForDay(task, today) || isOverdue(task, today))
+    .sort((a, b) =>
+      priorityRank(a.priority) - priorityRank(b.priority) ||
+      Number(isOverdue(b, today)) - Number(isOverdue(a, today)) ||
+      plannerDateKey(a.dueDate ?? "9999-12-31").localeCompare(plannerDateKey(b.dueDate ?? "9999-12-31")) ||
+      a.title.localeCompare(b.title),
+    )
+    .slice(0, 8);
+}
+
 function Sidebar({ onClose }: { onClose?: () => void }) {
   const navigation = [
     { label: "Overview", icon: LayoutDashboard, target: "overview" },
+    { label: "My Day", icon: CalendarDays, target: "my-day" },
     { label: "My tasks", icon: ListChecks, target: "tasks" },
     { label: "Calendar", icon: CalendarDays, target: "calendar" },
     { label: "Progress", icon: Target, target: "progress" },
@@ -686,6 +716,7 @@ export default function DashboardPage() {
   }
 
   const today = isoToday();
+  const myDayTasks = useMemo(() => getMyDayTasks(tasks, today), [tasks, today]);
   const metrics = useMemo(() => {
     const completed = tasks.filter((task) => task.completed).length;
     const pending = tasks.length - completed;
@@ -778,6 +809,36 @@ export default function DashboardPage() {
           <section className="welcome-row">
             <div><div className="date-line"><CalendarDays size={13} />{greeting}</div><h1>{hourInPlannerTimeZone < 12 ? "Good morning" : hourInPlannerTimeZone < 18 ? "Good afternoon" : "Good evening"}, Asladin <span aria-hidden="true">✳</span></h1><p>Your academic and life planner, at a glance.</p></div>
             <a className="open-notion-button" href="https://www.notion.so" target="_blank" rel="noreferrer">Open Notion <ExternalLink size={13} /></a>
+          </section>
+
+          <section className="panel my-day-panel" id="my-day" aria-labelledby="my-day-title">
+            <div className="panel-heading">
+              <div><h2 id="my-day-title">My Day</h2><p>Today&apos;s deadlines, overdue work, and daily routines</p></div>
+              <span className="chart-heading-icon tone-amber"><CalendarDays size={15} /></span>
+            </div>
+            {myDayTasks.length > 0 ? (
+              <div className="my-day-list">
+                {myDayTasks.map((task) => (
+                  <article className={`my-day-item${task.completed ? " completed" : ""}`} key={task.id}>
+                    <button type="button" aria-label={`Mark ${task.title} ${task.completed ? "not complete" : "complete"}`}
+                      onClick={() => void handleTaskComplete(task)} disabled={state !== "ready" || completingTaskId === task.id}>
+                      {completingTaskId === task.id ? <LoaderCircle size={14} className="spin" /> : <CheckCheck size={14} />}
+                    </button>
+                    <a className="my-day-title" href={task.url} target="_blank" rel="noreferrer">
+                      <strong>{task.title}</strong><span>{[task.courseCode, task.course, task.nextAction].filter(Boolean).join(" · ")}</span>
+                    </a>
+                    <span className={`my-day-priority priority-${task.priority.toLowerCase()}`}>{task.priority}</span>
+                    <button className="my-day-edit" type="button" onClick={() => { setCreateDialogOpen(false); setEditingTask(task); }}>Edit</button>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="my-day-empty">{state === "ready" ? "No overdue, due-today, or daily recurring items. You’re clear for today." : "Connect to Notion to see today's focus."}</p>
+            )}
+            <div className="my-day-footer">
+              <span>{myDayTasks.length} focus item{myDayTasks.length === 1 ? "" : "s"}{tasks.some((task) => isOverdue(task, today)) ? ` · ${tasks.filter((task) => isOverdue(task, today)).length} overdue` : ""}</span>
+              <button type="button" onClick={() => void document.getElementById("planner-assistant")?.scrollIntoView({ behavior: "smooth" })}>Plan my day with AI <Sparkles size={12} /></button>
+            </div>
           </section>
 
           {state === "error" && <div className="connection-banner"><span className="banner-icon"><AlertTriangle size={16} /></span><div><strong>We couldn’t load your Notion tasks</strong><p>{error}</p></div><button onClick={() => void loadTasks()}>Try again</button></div>}

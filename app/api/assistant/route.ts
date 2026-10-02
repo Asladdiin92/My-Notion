@@ -19,6 +19,36 @@ import { PLANNER_TIME_ZONE } from "@/lib/planner-datetime";
 import { extractAssistantFile } from "@/lib/assistant-files";
 
 export const dynamic = "force-dynamic";
+const MAX_MULTIPART_BYTES = 4 * 1024 * 1024;
+
+async function readMultipartForm(request: Request): Promise<FormData> {
+  const contentType = request.headers.get("content-type");
+  if (!contentType || !request.body) throw new Error("The assistant upload is empty.");
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_MULTIPART_BYTES) {
+        await reader.cancel();
+        throw new Error("The assistant request is too large. File uploads are limited to 3 MB.");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new Response(body, { headers: { "Content-Type": contentType } }).formData();
+}
 
 export async function POST(request: Request) {
   if (!await hasPlannerAccess()) {
@@ -38,7 +68,7 @@ export async function POST(request: Request) {
   if (!Number.isFinite(contentLength) || contentLength < 0) {
     return NextResponse.json({ error: "The assistant request has an invalid size." }, { status: 400 });
   }
-  if (contentLength > (multipart ? 4 * 1024 * 1024 : 40 * 1024)) {
+  if (contentLength > (multipart ? MAX_MULTIPART_BYTES : 40 * 1024)) {
     return NextResponse.json({ error: "The assistant request is too large. File uploads are limited to 3 MB." }, { status: 413 });
   }
 
@@ -46,7 +76,7 @@ export async function POST(request: Request) {
   let uploadedFile: Awaited<ReturnType<typeof extractAssistantFile>> | undefined;
   if (multipart) {
     try {
-      const form = await request.formData();
+      const form = await readMultipartForm(request);
       const allowedFormFields = new Set(["mode", "question", "language", "sourceLanguage", "file"]);
       if (Array.from(form.keys()).some((key) => !allowedFormFields.has(key)) ||
           ["mode", "question", "language", "sourceLanguage"].some((key) => form.getAll(key).length > 1)) {
@@ -84,14 +114,14 @@ export async function POST(request: Request) {
   if (Object.keys(values).some((key) => !["mode", "question", "date", "timezone", "taskId", "planning", "language", "sourceLanguage"].includes(key))) {
     return NextResponse.json({ error: "The request contains an unsupported field." }, { status: 400 });
   }
-  const modes = ["suggest", "ask", "plan", "breakdown", "day", "research", "writing", "translate", "analyze", "autofill"];
+  const modes = ["suggest", "ask", "plan", "breakdown", "day", "insights", "research", "writing", "translate", "analyze", "autofill"];
   if (typeof values.mode !== "string" || !modes.includes(values.mode)) {
     return NextResponse.json({ error: "Choose a valid assistant action." }, { status: 400 });
   }
   if (multipart && values.mode !== "analyze" && values.mode !== "autofill") {
     return NextResponse.json({ error: "Files can only be used for file analysis or database autofill." }, { status: 400 });
   }
-  if ((["ask", "plan", "research", "writing", "translate", "analyze", "autofill"].includes(values.mode)) &&
+  if ((["ask", "plan", "insights", "research", "writing", "translate", "analyze", "autofill"].includes(values.mode)) &&
       (typeof values.question !== "string" || !values.question.trim())) {
     return NextResponse.json({ error: "Enter an instruction or question for your planner." }, { status: 400 });
   }
@@ -171,7 +201,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const needsPlannerData = ["suggest", "ask", "plan", "breakdown", "day", "autofill"].includes(values.mode as string);
+    const needsPlannerData = ["suggest", "ask", "plan", "breakdown", "day", "insights", "autofill"].includes(values.mode as string);
     const tasks = needsPlannerData ? await fetchNotionTasks() : [];
     if (values.mode === "plan") {
       const options = await fetchNotionTaskOptions();
@@ -228,6 +258,10 @@ export async function POST(request: Request) {
       const options = await fetchNotionTaskOptions();
       const plan = await getPlannerDatabaseDraft(values.question as string, uploadedFile, tasks, options);
       return NextResponse.json({ plan }, { headers: { "Cache-Control": "no-store" } });
+    }
+    if (values.mode === "insights") {
+      const answer = await getPlannerAssistantAnswer("insights", values.question as string, tasks);
+      return NextResponse.json({ answer }, { headers: { "Cache-Control": "no-store" } });
     }
     const answer = await getPlannerAssistantAnswer(values.mode as "suggest" | "ask", values.question as string | undefined, tasks);
     return NextResponse.json({ answer }, { headers: { "Cache-Control": "no-store" } });
