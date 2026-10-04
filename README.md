@@ -24,6 +24,7 @@ property exists. Missing optional columns are not fabricated or seeded.
 - [Project structure](#project-structure)
 - [Run it locally](#run-it-locally)
 - [Connect your Notion database](#connect-your-notion-database)
+- [Connect Google Workspace](#connect-google-workspace)
 - [Deploy to Vercel](#deploy-to-vercel)
 - [Security notes](#security-notes)
 - [Troubleshooting](#troubleshooting)
@@ -61,13 +62,16 @@ Next.js middleware + API access check (allowlisted verified email)
         │ PATCH /api/tasks/:id      edit a planner item
         │ DELETE /api/tasks/:id     archive a planner item
         │ POST /api/assistant      planner, research, writing, translation, file tools
+        │ GET /api/google/summary   Gmail, Calendar, and Drive snapshot
+        │ POST /api/google/assistant on-demand task and Google data analysis
         ▼
-Next.js server (API routes + Notion mapping)
+Next.js server (API routes + Notion mapping + short-lived encrypted Google session)
         │
-        │ NOTION_API_KEY / NOTION_TOKEN / GEMINI_API_KEY / TAVILY_API_KEY (server-only)
+        │ NOTION_API_KEY / GEMINI_API_KEY / GOOGLE_CLIENT_SECRET / SESSION_SECRET (server-only)
         │ NOTION_DATABASE_ID
-        ▼
-Notion API (your existing planner database)
+        ├── Notion API (your existing planner database)
+        ├── Google Gmail / Calendar / Drive APIs (on demand)
+        └── Gemini API (only when you ask the AI assistant)
 ```
 
 The Notion secret stays on the server. It is never intentionally included in
@@ -243,6 +247,7 @@ Done/Planned status to Notion.
 notion-dashboard/
 ├── app/
 │   ├── api/assistant/       # Server-side Gemini planner assistant
+│   ├── api/google/         # Google OAuth, workspace snapshot, and AI secretary
 │   ├── api/tasks/route.ts   # GET task data/options and POST new items
 │   ├── sign-in/             # Clerk sign-in page
 │   ├── global-error.tsx     # Friendly recovery screen for unexpected errors
@@ -254,6 +259,8 @@ notion-dashboard/
 │   └── planner-assistant.tsx # AI suggestions, task Q&A, and confirmed edits
 ├── lib/
 │   ├── access.ts            # Verified-email allowlist check
+│   ├── google-types.ts      # Google Workspace snapshot types
+│   ├── google-workspace.ts  # OAuth session encryption and Google API calls
 │   ├── gemini.test.ts       # Gemini fallback behavior tests
 │   ├── gemini.ts            # Server-side Gemini API requests
 │   ├── notion.ts            # Notion API requests, validation, and mapping
@@ -313,6 +320,11 @@ CLERK_SECRET_KEY=sk_...
 ALLOWED_EMAILS=your_verified_email@example.com
 GEMINI_API_KEY=your_gemini_api_key
 TAVILY_API_KEY=your_tavily_api_key
+GOOGLE_CLIENT_ID=your_google_oauth_client_id
+GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
+GOOGLE_REDIRECT_URI=https://my-notion-lemon.vercel.app/api/google/callback
+GOOGLE_CALLBACK_URL=https://my-notion-lemon.vercel.app/api/google/callback
+SESSION_SECRET=replace_with_a_random_secret_at_least_32_characters_long
 ```
 
 The email must be verified in Clerk. `ALLOWED_EMAILS` is enforced server-side
@@ -428,9 +440,45 @@ Only set an override when a property name is different. The form supports the
 database's select/status option properties, date property, rich-text Course
 Code and Next action properties, and numeric Est. property. If your database
 uses a different type for a field, adapt the corresponding mapping in `lib/notion.ts`.
-The main dashboard still uses in-page navigation for its Overview, Tasks,
-Calendar, Progress, and AI planner sections; the PostgreSQL-specific
-`app_users`, sync-state, and AI-plan tables are intentionally not used.
+The PostgreSQL-specific `app_users`, sync-state, and AI-plan tables are
+intentionally not used.
+
+## Connect Google Workspace
+
+Google is linked to the signed-in Clerk account; it does not replace Clerk
+login. Create an OAuth 2.0 **Web application** client in Google Cloud Console,
+enable Gmail API, Google Calendar API, and Google Drive API, and add this exact
+authorized redirect URI:
+
+```text
+https://my-notion-lemon.vercel.app/api/google/callback
+```
+
+Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and both
+`GOOGLE_REDIRECT_URI` and `GOOGLE_CALLBACK_URL` to the values in `.env.example`.
+The two callback variables must match. For local development, register the
+local callback URL separately and set both variables to that URL. Generate a
+`SESSION_SECRET` with at least 32 characters (for example,
+`openssl rand -base64 48`).
+
+Use **Connect Google** on the dashboard while signed in. Gmail, Calendar, and
+Drive are requested together. This implementation is session-only: it requests
+online access, keeps an encrypted, HTTP-only Google access-token cookie for at
+most one hour, and does not store a Google refresh token, email body, or Drive
+file content in MongoDB or elsewhere. You may need to reconnect after the
+session expires. `MONGO_URI` is not used. There is no background polling,
+continuous activity history, or autonomous email/task creation in this
+stateless setup.
+
+The dashboard fetches unread Gmail snippets, the next seven days of calendar
+events, and recent Drive file metadata on demand. When you explicitly ask the
+**Personal secretary** assistant, it fetches up to three unread email bodies
+alongside planner tasks, events, and file metadata, then sends that snapshot
+to Gemini to answer your question. Avoid asking it to process sensitive mail
+unless you accept that processing. It only suggests actions; it cannot send,
+delete, create, or edit Google data. Google OAuth currently requests broad
+Gmail and Drive scopes, which may require Google OAuth app verification before
+the app can serve users beyond your test accounts.
 
 ## Deploy to Vercel
 
@@ -438,15 +486,15 @@ Calendar, Progress, and AI planner sections; the PostgreSQL-specific
 2. In the Vercel project settings, add `NOTION_API_KEY` (or `NOTION_TOKEN`),
    `NOTION_DATABASE_ID`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
    `CLERK_SECRET_KEY`, `ALLOWED_EMAILS`, `GEMINI_API_KEY`, and
-   `TAVILY_API_KEY` under
+   `TAVILY_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+   `GOOGLE_REDIRECT_URI`, `GOOGLE_CALLBACK_URL`, and `SESSION_SECRET` under
    **Environment Variables**. Use the Clerk keys from your Clerk application;
    set values for the Vercel environments you will use.
 3. Add property-name overrides if necessary. Ensure the allowlisted email is
    verified in Clerk.
 4. Redeploy after changing environment variables.
 
-Do **not** upload `.env.local` or publish your integration secret. Vercel uses
-the environment variables on its server to call Notion.
+Do **not** upload `.env.local` or publish your integration secret. Vercel uses these variables on the server to call Notion and Google APIs.
 
 ## Security notes
 
@@ -457,6 +505,12 @@ the environment variables on its server to call Notion.
 - `GEMINI_API_KEY` is sent to Google only from the server. Planner task details
   are sent to Gemini when using the assistant; do not use it if you do not want
   that data processed by Google.
+- Google OAuth tokens are encrypted in a short-lived HTTP-only cookie, not
+  exposed to client JavaScript, and scoped to `/api/google`. In the Personal
+  secretary tool, up to three unread email bodies and the current task/event
+  snapshot are sent to Gemini only after the user submits a question. Disconnect
+  revokes the active Google access token. No refresh token or activity history
+  is stored.
 - `TAVILY_API_KEY` is sent only from the server. Research queries are sent to
   Tavily and retrieved snippets are passed to Gemini for a cited summary.
 - Uploaded files are limited to 3 MB and processed for the current request;
@@ -480,6 +534,8 @@ the environment variables on its server to call Notion.
 | “Add `NOTION_API_KEY` and `NOTION_DATABASE_ID`...” | Fill both values in `.env.local` and restart `npm run dev`. `NOTION_TOKEN` is also accepted instead of `NOTION_API_KEY`. |
 | Clerk reports missing keys | Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` locally and in the Vercel project, then restart or redeploy. |
 | Planner assistant reports a missing Gemini key | Set `GEMINI_API_KEY` in `.env.local` or the Vercel environment, then restart or redeploy. |
+| Google connection setup fails | Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and a 32-character `SESSION_SECRET`; ensure both callback URL variables match the URI registered in Google Cloud Console, then redeploy. |
+| Google asks to reauthorize | The stateless Google session expires within one hour. Reconnect from the dashboard; persistent refresh tokens are not stored. |
 | Web research reports a missing Tavily key | Add `TAVILY_API_KEY` to `.env.local` or the Vercel environment, then restart or redeploy. |
 | Gemini rejects the API key | Check that `GEMINI_API_KEY` is valid and that the Gemini API is enabled for its Google project. |
 | Sign-in works but planner access is denied | Verify the signed-in email in Clerk and add the exact address to server-side `ALLOWED_EMAILS`. |

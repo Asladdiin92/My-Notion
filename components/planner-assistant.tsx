@@ -27,7 +27,7 @@ type AssistantResponse = {
 };
 type TaskMutationResponse = { ok: boolean; task?: Task; error?: string };
 type ChangeField = keyof PlannerChange["fields"];
-type AssistantMode = "suggest" | "ask" | "plan" | "breakdown" | "day" | "insights" | "research" | "writing" | "translate" | "analyze" | "autofill";
+type AssistantMode = "suggest" | "ask" | "plan" | "breakdown" | "day" | "insights" | "research" | "writing" | "translate" | "analyze" | "autofill" | "secretary";
 type PlannedTask = {
   title: string;
   area?: string;
@@ -102,6 +102,7 @@ export function PlannerAssistant({
   disabled,
   tasks,
   options,
+  googleConnected,
   taskToBreakDown,
   onBreakdownHandled,
   onTaskSaved,
@@ -109,6 +110,7 @@ export function PlannerAssistant({
   disabled: boolean;
   tasks: Task[];
   options: TaskOptions | null;
+  googleConnected: boolean;
   taskToBreakDown: Task | null;
   onBreakdownHandled: () => void;
   onTaskSaved: (task: Task) => void;
@@ -163,7 +165,7 @@ export function PlannerAssistant({
             form.set("file", selectedFile!);
             return form;
           })()
-        : JSON.stringify({
+        : JSON.stringify(mode === "secretary" ? { question: prompt } : {
             mode,
             question: prompt,
             ...(mode === "translate" ? { language: targetLanguage, sourceLanguage } : {}),
@@ -181,7 +183,7 @@ export function PlannerAssistant({
               },
             } : {}),
           });
-      const response = await fetch("/api/assistant", {
+      const response = await fetch(mode === "secretary" ? "/api/google/assistant" : "/api/assistant", {
         method: "POST",
         ...(!useUpload ? { headers: { "Content-Type": "application/json" } } : {}),
         body,
@@ -456,8 +458,8 @@ export function PlannerAssistant({
         return task ? [task] : [];
       })
     : [];
-  const modeDisabled = disabled &&
-    ["plan", "insights", "autofill"].includes(assistantMode);
+  const modeDisabled = (disabled && ["plan", "insights", "autofill", "secretary"].includes(assistantMode)) ||
+    (assistantMode === "secretary" && !googleConnected);
 
   return (
     <section className="panel assistant-panel" id="planner-assistant" aria-labelledby="assistant-title">
@@ -491,6 +493,7 @@ export function PlannerAssistant({
           }}>
             <option value="plan">Planner: ask, create, or edit tasks</option>
             <option value="insights">Analyze my planner</option>
+            <option value="secretary">Personal secretary: tasks, Gmail, Calendar, Drive</option>
             <option value="research">Web research (with sources)</option>
             <option value="writing">Writing assistant</option>
             <option value="autofill">Generate / autofill Notion items</option>
@@ -532,6 +535,7 @@ export function PlannerAssistant({
             placeholder={
               assistantMode === "research" ? "What would you like to research?" :
               assistantMode === "insights" ? "Ask about overdue work, workload, hours, areas, or courses..." :
+              assistantMode === "secretary" ? "What should I work on, or what needs attention in email and calendar?" :
               assistantMode === "writing" ? "What would you like to draft, revise, or summarize?" :
               assistantMode === "translate" ? "Enter text to translate..." :
               assistantMode === "analyze" ? "What should I look for in the uploaded file?" :
@@ -543,7 +547,9 @@ export function PlannerAssistant({
           </button>
         </form>
       </div>
-      {modeDisabled && <p className="assistant-hint">Connect to Notion and load your tasks to plan or autofill database items.</p>}
+      {modeDisabled && <p className="assistant-hint">{assistantMode === "secretary" && !googleConnected
+        ? "Connect Google Workspace above to use the personal secretary."
+        : "Connect to Notion and load your tasks to plan or autofill database items."}</p>}
       {answer && <div className="assistant-response" role="status" aria-live="polite"><AssistantMarkdown text={answer} /></div>}
       {sources.length > 0 && (
         <div className="assistant-sources" aria-label="Web research sources">

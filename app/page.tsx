@@ -19,6 +19,7 @@ import {
   Columns3,
   ExternalLink,
   Flame,
+  GitBranch,
   LayoutDashboard,
   ListChecks,
   LoaderCircle,
@@ -30,7 +31,9 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  StickyNote,
   Target,
+  Terminal,
   Trash2,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -43,6 +46,7 @@ import {
 } from "@/components/dashboard-charts";
 import { PlannerAssistant } from "@/components/planner-assistant";
 import type { Task, TaskOptions, TasksResponse } from "@/lib/types";
+import type { GoogleWorkspaceSummary } from "@/lib/google-types";
 import {
   formatPlannerDate as formatDate,
   plannerDateKey,
@@ -56,6 +60,13 @@ type LoadState = "loading" | "ready" | "error";
 type TaskMutationResponse = { ok: boolean; task?: Task; error?: string };
 
 const isoToday = todayInPlannerTimeZone;
+const emptyGoogleSummary: GoogleWorkspaceSummary = {
+  connected: false,
+  unreadEmails: 0,
+  messages: [],
+  events: [],
+  files: [],
+};
 
 function countBy(tasks: Task[], select: (task: Task) => string) {
   const counts = new Map<string, number>();
@@ -128,7 +139,17 @@ function getMyDayTasks(tasks: Task[], today: string): Task[] {
     .slice(0, 8);
 }
 
-function Sidebar({ onClose }: { onClose?: () => void }) {
+function Sidebar({
+  onClose,
+  taskCount,
+  projectCount,
+  meetingCount,
+}: {
+  onClose?: () => void;
+  taskCount: number;
+  projectCount: number;
+  meetingCount: number;
+}) {
   const [activeTarget, setActiveTarget] = useState("overview");
   useEffect(() => {
     const syncActiveTarget = () => setActiveTarget(window.location.hash.slice(1) || "overview");
@@ -137,26 +158,27 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
     return () => window.removeEventListener("hashchange", syncActiveTarget);
   }, []);
 
-  const navigation = [
+  const navigation: Array<{ label: string; icon: LucideIcon; target: string; count?: number; badge?: string }> = [
     { label: "Home", icon: LayoutDashboard, target: "overview" },
-    { label: "Tasks", icon: ListChecks, target: "tasks" },
-    { label: "Projects", icon: BriefcaseBusiness, target: "projects" },
-    { label: "Notes", icon: BookOpen, target: "notes" },
-    { label: "Calendar", icon: CalendarDays, target: "calendar" },
+    { label: "Tasks", icon: ListChecks, target: "tasks", count: taskCount, badge: "tasks-badge" },
+    { label: "Projects", icon: GitBranch, target: "projects", count: projectCount, badge: "projects-badge" },
+    { label: "Notes", icon: StickyNote, target: "notes" },
+    { label: "Calendar", icon: CalendarDays, target: "calendar", count: meetingCount, badge: "calendar-badge" },
     { label: "Analytics", icon: Target, target: "progress" },
     { label: "AI Assistant", icon: Sparkles, target: "planner-assistant" },
   ];
   return (
     <aside className="sidebar">
       <a className="brand" href="#overview" onClick={onClose}>
-        <span className="brand-mark">A</span>
-        <span className="brand-copy"><strong>Asladin AI</strong><small>Command center</small></span>
+        <span className="brand-mark"><Terminal size={17} strokeWidth={2.2} /></span>
+        <span className="brand-copy"><strong>ASLADIN</strong><small>Command v2.4</small></span>
       </a>
       <div className="sidebar-label">WORKSPACE</div>
       <nav className="sidebar-nav" aria-label="Main navigation">
-        {navigation.map(({ label, icon: Icon, target }) => (
+        {navigation.map(({ label, icon: Icon, target, count, badge }) => (
           <a className={`nav-link${activeTarget === target ? " active" : ""}`} aria-current={activeTarget === target ? "page" : undefined} href={`#${target}`} onClick={onClose} key={label}>
             <Icon size={16} strokeWidth={1.8} /><span>{label}</span>
+            {count !== undefined && count > 0 && <span className={`nav-badge ${badge}`}>{count}</span>}
           </a>
         ))}
       </nav>
@@ -643,6 +665,9 @@ export default function DashboardPage() {
   const [actionError, setActionError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [taskToBreakDown, setTaskToBreakDown] = useState<Task | null>(null);
+  const [googleSummary, setGoogleSummary] = useState<GoogleWorkspaceSummary>(emptyGoogleSummary);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [googleError, setGoogleError] = useState("");
 
   const loadTasks = useCallback(async () => {
     setState("loading");
@@ -662,9 +687,43 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const loadGoogleSummary = useCallback(async () => {
+    setGoogleLoading(true);
+    setGoogleError("");
+    try {
+      const response = await fetch("/api/google/summary", { cache: "no-store" });
+      const result = await response.json() as GoogleWorkspaceSummary & { error?: string };
+      if (response.status === 401) setGoogleSummary(emptyGoogleSummary);
+      if (!response.ok) throw new Error(result.error ?? "Google session expired. Reconnect your Google account.");
+      setGoogleSummary(result);
+      if (result.error) setGoogleError(result.error);
+    } catch (loadError) {
+      setGoogleError(loadError instanceof Error ? loadError.message : "Could not load Google Workspace.");
+    } finally {
+      setGoogleLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (isLoaded && hasAccess) void loadTasks();
   }, [hasAccess, isLoaded, loadTasks]);
+
+  useEffect(() => {
+    if (isLoaded && hasAccess) void loadGoogleSummary();
+  }, [hasAccess, isLoaded, loadGoogleSummary]);
+
+  useEffect(() => {
+    const result = new URLSearchParams(window.location.search).get("google");
+    if (result === "connected") {
+      setSuccessMessage("Google Workspace connected for this browser session.");
+      window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+    } else if (result) {
+      setGoogleError(result === "auth-error"
+        ? "Google authorization was not verified. Sign in to the dashboard and try connecting again."
+        : "Google connection did not complete. Check your OAuth settings and try again.");
+      window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+    }
+  }, []);
 
   function handleTaskSaved(task: Task) {
     setTasks((current) => editingTask
@@ -726,8 +785,23 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleGoogleDisconnect() {
+    setGoogleError("");
+    try {
+      const response = await fetch("/api/google/disconnect", { method: "POST" });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Could not disconnect Google.");
+      setGoogleSummary(emptyGoogleSummary);
+    } catch (disconnectError) {
+      setGoogleError(disconnectError instanceof Error ? disconnectError.message : "Could not disconnect Google.");
+    }
+  }
+
   const today = isoToday();
   const myDayTasks = useMemo(() => getMyDayTasks(tasks, today), [tasks, today]);
+  const meetingsToday = googleSummary.events.filter((event) =>
+    event.start && plannerDateKey(event.start) === today
+  ).length;
   const metrics = useMemo(() => {
     const completed = tasks.filter((task) => task.completed).length;
     const pending = tasks.length - completed;
@@ -801,7 +875,8 @@ export default function DashboardPage() {
 
   return (
     <div className="app-shell" id="overview">
-      <div className={`sidebar-wrap${sidebarOpen ? " sidebar-open" : ""}`}><Sidebar onClose={() => setSidebarOpen(false)} /></div>
+      <div className={`sidebar-wrap${sidebarOpen ? " sidebar-open" : ""}`}><Sidebar onClose={() => setSidebarOpen(false)}
+        taskCount={myDayTasks.length} projectCount={areaData.length} meetingCount={meetingsToday} /></div>
       {sidebarOpen && <button className="sidebar-overlay" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
       <main className="main-content">
         <header className="topbar">
@@ -851,16 +926,37 @@ export default function DashboardPage() {
             </div>
           </section>
 
+          <section className="panel google-workspace-panel" aria-labelledby="google-workspace-title">
+            <div className="panel-heading google-workspace-heading">
+              <div><h2 id="google-workspace-title">Google Workspace</h2><p>{googleSummary.connected ? `Connected as ${googleSummary.email}` : "Connect Gmail, Calendar, and Drive for an on-demand AI briefing."}</p></div>
+              <div className="google-workspace-actions">
+                {googleSummary.connected
+                  ? <button type="button" className="refresh-button" onClick={() => void loadGoogleSummary()} disabled={googleLoading}>{googleLoading ? "Refreshing..." : "Refresh"}</button>
+                  : <a className="google-connect-button" href="/api/google/connect">Connect Google</a>}
+                {googleSummary.connected && <button type="button" className="google-disconnect-button" onClick={() => void handleGoogleDisconnect()}>Disconnect</button>}
+              </div>
+            </div>
+            {googleError && <p className="google-workspace-error" role="alert">{googleError}</p>}
+            {googleSummary.connected && <>
+              <div className="google-workspace-counts"><span><strong>{googleSummary.unreadEmails}</strong> unread emails</span><span><strong>{meetingsToday}</strong> meetings today</span><span><strong>{googleSummary.files.length}</strong> recent Drive files</span></div>
+              <div className="google-workspace-data">
+                <div><h3>Unread email</h3>{googleSummary.messages.slice(0, 3).map((message) => <article key={message.id}><strong>{message.subject}</strong><span>{message.from}</span><p>{message.snippet}</p></article>)}{googleSummary.messages.length === 0 && <p className="google-workspace-empty">No unread messages found.</p>}</div>
+                <div><h3>Upcoming calendar</h3>{googleSummary.events.slice(0, 4).map((event) => <a key={event.id} href={event.link || "#calendar"} target={event.link ? "_blank" : undefined} rel={event.link ? "noreferrer" : undefined}><time>{event.start ? formatDate(event.start) : "Scheduled"}</time><strong>{event.title}</strong></a>)}{googleSummary.events.length === 0 && <p className="google-workspace-empty">No upcoming events this week.</p>}</div>
+                <div><h3>Recent Drive files</h3>{googleSummary.files.slice(0, 4).map((file) => <a key={file.id} href={file.link || "#"} target={file.link ? "_blank" : undefined} rel={file.link ? "noreferrer" : undefined}><BookOpen size={13} /><span>{file.name}</span></a>)}{googleSummary.files.length === 0 && <p className="google-workspace-empty">No recent files found.</p>}</div>
+              </div>
+            </>}
+          </section>
+
           {state === "error" && <div className="connection-banner"><span className="banner-icon"><AlertTriangle size={16} /></span><div><strong>We couldn’t load your Notion tasks</strong><p>{error}</p></div><button onClick={() => void loadTasks()}>Try again</button></div>}
           {state === "loading" && tasks.length === 0 && <div className="loading-banner"><LoaderCircle size={15} className="spin" /> Connecting securely to your Notion database...</div>}
           {successMessage && <div className="success-banner" role="status"><Check size={15} /><span>{successMessage}</span><button onClick={() => setSuccessMessage("")} aria-label="Dismiss">×</button></div>}
           {actionError && <div className="connection-banner" role="alert"><span className="banner-icon"><AlertTriangle size={16} /></span><div><strong>Could not update the planner</strong><p>{actionError}</p></div><button onClick={() => setActionError("")}>Dismiss</button></div>}
 
           <section className="metrics-grid" aria-label="Task overview">
-            <MetricCard label="Tasks Today" value={5} note="Ready for today" icon={ListChecks} tone="tone-green" />
-            <MetricCard label="Unread Emails" value={12} note="Across your inbox" icon={Mail} tone="tone-blue" />
-            <MetricCard label="Meetings" value={2} note="On your calendar" icon={CalendarClock} tone="tone-violet" />
-            <MetricCard label="Projects" value={4} note="Currently active" icon={BriefcaseBusiness} tone="tone-amber" />
+            <MetricCard label="Tasks Today" value={myDayTasks.length} note="Due, recurring, or overdue" icon={ListChecks} tone="tone-green" />
+            <MetricCard label="Unread Emails" value={googleSummary.connected ? googleSummary.unreadEmails : "—"} note={googleSummary.connected ? "In your Gmail inbox" : "Connect Google to view"} icon={Mail} tone="tone-blue" />
+            <MetricCard label="Meetings" value={googleSummary.connected ? meetingsToday : "—"} note={googleSummary.connected ? "On your calendar today" : "Connect Google to view"} icon={CalendarClock} tone="tone-violet" />
+            <MetricCard label="Projects" value={areaData.length} note="Active planner areas" icon={BriefcaseBusiness} tone="tone-amber" />
           </section>
 
           <div className="section-heading" id="progress"><div><h2>Your progress</h2><p>See where your time and attention are going</p></div><span className="live-label"><i /> All insights from your database</span></div>
@@ -891,7 +987,7 @@ export default function DashboardPage() {
             </article>
           </section>
 
-          <PlannerAssistant disabled={state !== "ready"} tasks={tasks} options={taskOptions}
+          <PlannerAssistant disabled={state !== "ready"} tasks={tasks} options={taskOptions} googleConnected={googleSummary.connected}
             taskToBreakDown={taskToBreakDown} onBreakdownHandled={clearTaskToBreakDown}
             onTaskSaved={handleAssistantTaskSaved} />
 

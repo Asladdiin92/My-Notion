@@ -656,6 +656,29 @@ body { background: radial-gradient(ellipse at 78% 0, #e9eee5 0, transparent 34%)
 .command-center-banner .open-notion-button { min-height: 38px; padding-inline: 14px; border-radius: 8px; font-size: 10px; }
 .panel { border-color: #e4e8e1; border-radius: 12px; box-shadow: 0 3px 12px #34452e08; }
 .my-day-panel { margin-bottom: 22px; padding: 18px 19px; }
+.google-workspace-panel { margin-bottom: 22px; padding: 18px 19px; }
+.google-workspace-heading { align-items: center; }
+.google-workspace-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.google-connect-button { display: inline-flex; min-height: 33px; align-items: center; padding: 0 11px; border: 1px solid #617c5a; border-radius: 7px; background: #6f8667; color: #fff; font-size: 10px; font-weight: 600; }
+.google-connect-button:hover { background: #5d7555; }
+.google-disconnect-button { min-height: 30px; padding: 0 9px; border: 1px solid #e4e8e1; border-radius: 7px; background: #fff; color: #727b70; cursor: pointer; font-size: 9px; }
+.google-disconnect-button:hover { border-color: #d8c6bf; color: #9c5e51; }
+.google-workspace-error { margin: 10px 0 0; color: #a15e53; font-size: 10px; }
+.google-workspace-counts { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 15px; }
+.google-workspace-counts > span { padding: 7px 10px; border-radius: 7px; background: #f3f6f0; color: #687568; font-size: 9px; }
+.google-workspace-counts strong { margin-right: 4px; color: #354735; font-size: 12px; }
+.google-workspace-data { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.google-workspace-data > div { min-width: 0; padding: 11px; border: 1px solid #edf0ea; border-radius: 8px; background: #fcfdfa; }
+.google-workspace-data h3 { margin: 0 0 7px; color: #51614f; font: 700 10px var(--font-display); }
+.google-workspace-data article { display: grid; gap: 3px; padding: 7px 0; border-top: 1px solid #edf0ea; }
+.google-workspace-data article strong, .google-workspace-data article span { overflow: hidden; color: #495649; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.google-workspace-data article span { color: #7b8579; font-size: 8px; }
+.google-workspace-data article p { display: -webkit-box; overflow: hidden; margin: 0; color: #737e72; font-size: 8px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.google-workspace-data > div > a { display: flex; min-width: 0; align-items: center; gap: 7px; padding: 7px 0; border-top: 1px solid #edf0ea; color: #53664f; font-size: 9px; }
+.google-workspace-data > div > a:hover { color: #304a2e; text-decoration: underline; }
+.google-workspace-data > div > a time { flex: 0 0 62px; color: #7d887c; font-size: 8px; }
+.google-workspace-data > div > a strong, .google-workspace-data > div > a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.google-workspace-empty { margin: 0; color: #7e887d; font-size: 9px; }
 .panel-heading h2, .panel-heading h3 { color: #303a30; font-size: 13px; }
 .panel-heading p { color: #788278; font-size: 10px; }
 .my-day-item { min-height: 54px; }
@@ -704,4 +727,46 @@ body { background: radial-gradient(ellipse at 78% 0, #e9eee5 0, transparent 34%)
   .metric-value { font-size: 26px; }
   .metric-note { font-size: 9px; }
   .my-day-panel { padding: 15px; }
+  .google-workspace-panel { padding: 15px; }
+  .google-workspace-heading { align-items: flex-start; flex-direction: column; }
+  .google-workspace-data { grid-template-columns: minmax(0, 1fr); }
+}
+
+:root { --sidebar: #111827; }
+.sidebar { border-right-color: #263247; background: radial-gradient(ellipse at 15% 0, #1e2b44 0, transparent 35%), linear-gradient(180deg, #121b2b, #0e1623); color: #f8fafc; }
+.sidebar .brand { margin: -22px -14px 22px; padding: 22px 22px 20px; border-bottom: 1px solid #283347; }
+.sidebar .brand-mark { border: 0; border-radius: 12px; background: linear-gradient(135deg, #3478f6, #6153e8); color: #fff; box-shadow: 0 8px 22px #386ef642; }
+.sidebar .brand-copy strong { color: #f8fafc; font-size: 15px; letter-spacing: 1px; }
+.sidebar .brand-copy small { color: #76a4ff; font-size: 9px; font-weight: 600; letter-spacing: 1.45px; text-transform: uppercase; }
+.sidebar .sidebar-label { color: #7c8aa2; font-size: 9px; letter-spacing: 1.5px; }
+.sidebar .sidebar-nav { gap: 5px; margin: 13px 0 25px; padding: 0 0; }
+.sidebar .nav-link { min-height: 44px; gap: 11px; padding: 0 13px; border: 1px solid transparent; border-radius: 10px; color: #a5b0c1; font-size: 12px; font-weight: 500; }
+.sidebar .nav-link svg { color: #9aa8bb; transition: color .18s, transform .18s; }
+.sidebar .nav-link:hover { background: #1b2739; color: #f8fafc; }
+.sidebar .nav-link:hover svg { color: #76a4ff; transform: translateX(1px); }
+.sidebar .nav-link.active { border-color: #5284ff30; background: linear-gradient(105deg, #2563eb, #4f46e5); color: #fff; font-weight: 600; box-shadow: 0 8px 20px #245de54d; }
+.sidebar .nav-link.active svg { color: #fff; }
+.sidebar .nav-badge { width: auto; min-width: 24px; height: 20px; padding: 0 7px; border: 0; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.sidebar .tasks-badge { background: #3b82f633; color: #8db8ff; }
+.sidebar .projects-badge { background: #a855f733; color: #d0a2ff; }
+.sidebar .calendar-badge { background: #f59e0b2b; color: #f8c76c; }
+.sidebar .nav-link.active .nav-badge { background: #ffffff28; color: #fff; }
+.sidebar .projects-label { padding-bottom: 10px; }
+.sidebar .database-link { min-height: 39px; color: #aab5c5; font-size: 10px; }
+.sidebar .database-link:hover { background: #1b2739; color: #fff; }
+.sidebar .database-icon { border-radius: 7px; background: #25344a; color: #9bc1ff; }
+.sidebar .notion-status { color: #929fb2; font-size: 9px; }
+.sidebar .status-indicator { background: #6dbb91; box-shadow: 0 0 10px #6dbb9166; }
+.sidebar .profile-row { border-top-color: #283347; }
+.sidebar .profile-row strong { color: #f1f5f9; }
+.sidebar .profile-row small { color: #8592a5; }
+.sidebar .profile-avatar { background: #263344; color: #c7d4e6; }
+.sidebar .profile-sparkle { color: #a98bff; }
+
+@media (max-width: 790px) {
+  .sidebar .brand { margin: -14px -8px 12px; padding: 14px 0 16px; justify-content: center; }
+}
+
+@media (max-width: 590px) {
+  .sidebar-wrap .sidebar .brand { margin: -20px -14px 20px; padding: 20px 22px 20px; justify-content: flex-start; }
 }
