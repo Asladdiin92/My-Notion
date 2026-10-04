@@ -770,3 +770,72 @@ body { background: radial-gradient(ellipse at 78% 0, #e9eee5 0, transparent 34%)
 @media (max-width: 590px) {
   .sidebar-wrap .sidebar .brand { margin: -20px -14px 20px; padding: 20px 22px 20px; justify-content: flex-start; }
 }
+
+.dashboard-insights-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); align-items: start; gap: 15px; margin: 0 0 30px; }
+.activity-panel, .recommendations-panel { min-width: 0; padding: 18px 19px; }
+.insight-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.insight-eyebrow { color: #7b8978; font-size: 8px; font-weight: 700; letter-spacing: 1.1px; }
+.insight-heading h2 { margin: 5px 0 4px; color: #303a30; font: 700 15px var(--font-display); letter-spacing: -.25px; }
+.insight-heading p { margin: 0; color: #788278; font-size: 9px; line-height: 1.5; }
+.insight-heading-icon { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 9px; }
+.activity-heading-icon { background: #edf5ee; color: #568368; }
+.recommendations-heading-icon { background: #f1edff; color: #7862d4; }
+.activity-list { display: grid; gap: 0; margin: 15px 0 0; padding: 0; list-style: none; }
+.activity-item { display: grid; grid-template-columns: 23px minmax(0, 1fr) auto auto; align-items: center; gap: 9px; min-height: 53px; padding: 8px 0; border-top: 1px solid #edf0ea; animation: activity-enter .28s ease both; }
+.activity-item:nth-child(2) { animation-delay: 35ms; }
+.activity-item:nth-child(3) { animation-delay: 70ms; }
+.activity-item:nth-child(4) { animation-delay: 105ms; }
+.activity-item:nth-child(5) { animation-delay: 140ms; }
+.activity-check { display: grid; width: 22px; height: 22px; place-items: center; border: 1px solid #dce9df; border-radius: 50%; background: #f3f8f3; color: #7c9e83; }
+.activity-check.is-complete { border-color: #cbe5d1; background: #eaf6ed; color: #3d9160; }
+.activity-copy { display: grid; min-width: 0; gap: 3px; }
+.activity-copy strong { overflow: hidden; color: #3e493e; font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.activity-copy > span { overflow: hidden; color: #838d82; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.activity-item time { color: #7b867a; font-size: 8px; white-space: nowrap; }
+.activity-status { max-width: 105px; overflow: hidden; padding: 4px 7px; border-radius: 999px; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.activity-status-complete { background: #e9f5ec; color: #397b4f; }
+.activity-status-overdue { background: #fbefec; color: #a9574d; }
+.activity-status-open { background: #f0f3ee; color: #697669; }
+.activity-empty { display: flex; align-items: center; gap: 9px; min-height: 65px; margin-top: 14px; padding: 10px; border: 1px dashed #dce5dc; border-radius: 9px; background: #fafcf9; }
+.activity-empty p { margin: 0; color: #788278; font-size: 9px; }
+.activity-footnote, .recommendations-footnote { margin: 11px 0 0; color: #859083; font-size: 8px; line-height: 1.5; }
+.recommendation-list { display: grid; gap: 8px; margin-top: 14px; }
+.recommendation-card { display: grid; grid-template-columns: 33px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid #e9ece6; border-radius: 10px; background: linear-gradient(110deg, #fff, #fcfdfb); transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease; }
+.recommendation-card:hover { transform: translateY(-2px); border-color: #d8dced; background: #fff; box-shadow: 0 8px 20px #303f5c10; }
+.recommendation-card.has-result { border-color: #dce9dc; }
+.recommendation-icon { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 9px; }
+.recommendation-icon-priorities { background: #edf4ea; color: #64845c; }
+.recommendation-icon-inbox { background: #eef4f8; color: #5d8297; }
+.recommendation-icon-calendar { background: #f2eefb; color: #8370b1; }
+.recommendation-copy { display: grid; min-width: 0; gap: 4px; }
+.recommendation-copy strong { color: #3c483c; font-size: 10px; font-weight: 650; }
+.recommendation-copy p { margin: 0; color: #798479; font-size: 8px; line-height: 1.45; }
+.recommendation-run { display: inline-flex; min-height: 29px; align-items: center; justify-content: center; gap: 4px; padding: 0 9px; border: 1px solid #dfe6db; border-radius: 7px; background: #fff; color: #526c4d; cursor: pointer; font-size: 8px; font-weight: 600; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
+.recommendation-run:hover:not(:disabled) { transform: translateY(-1px); border-color: #b9cbb4; background: #f4f8f1; }
+.recommendation-run:disabled { cursor: not-allowed; opacity: .55; }
+.recommendation-feedback { grid-column: 1 / -1; margin: 0; padding: 10px 11px; border-radius: 8px; font-size: 9px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; animation: activity-enter .2s ease both; }
+.recommendation-error { background: #fff7f4; color: #a55247; }
+.recommendation-result { max-height: 230px; overflow: auto; border: 1px solid #e7ede4; background: #f8faf6; color: #546153; }
+@keyframes activity-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (max-width: 950px) {
+  .dashboard-insights-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 590px) {
+  .dashboard-insights-grid { gap: 10px; margin-bottom: 24px; }
+  .activity-panel, .recommendations-panel { padding: 15px; }
+  .activity-item { grid-template-columns: 23px minmax(0, 1fr) auto; gap: 7px; }
+  .activity-item time { grid-column: 2; grid-row: 2; }
+  .activity-status { grid-column: 3; grid-row: 1 / span 2; }
+  .recommendation-card { grid-template-columns: 30px minmax(0, 1fr); gap: 8px; }
+  .recommendation-icon { width: 29px; height: 29px; }
+  .recommendation-run { grid-column: 2; justify-self: start; }
+  .recommendation-feedback { grid-column: 1 / -1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-item, .recommendation-feedback { animation: none; }
+  .recommendation-card, .recommendation-run { transition: none; }
+  .recommendation-card:hover, .recommendation-run:hover:not(:disabled) { transform: none; }
+}

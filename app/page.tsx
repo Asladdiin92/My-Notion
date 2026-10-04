@@ -45,6 +45,7 @@ import {
   TypeChart,
 } from "@/components/dashboard-charts";
 import { PlannerAssistant } from "@/components/planner-assistant";
+import { AIRecommendationsPanel, RecentActivityPanel } from "@/components/dashboard-insights";
 import type { Task, TaskOptions, TasksResponse } from "@/lib/types";
 import type { GoogleWorkspaceSummary } from "@/lib/google-types";
 import {
@@ -957,6 +958,11 @@ export default function DashboardPage() {
             <MetricCard label="Unread Emails" value={googleSummary.connected ? googleSummary.unreadEmails : "—"} note={googleSummary.connected ? "In your Gmail inbox" : "Connect Google to view"} icon={Mail} tone="tone-blue" />
             <MetricCard label="Meetings" value={googleSummary.connected ? meetingsToday : "—"} note={googleSummary.connected ? "On your calendar today" : "Connect Google to view"} icon={CalendarClock} tone="tone-violet" />
             <MetricCard label="Projects" value={areaData.length} note="Active planner areas" icon={BriefcaseBusiness} tone="tone-amber" />
+          </section>
+
+          <section className="dashboard-insights-grid" aria-label="Recent activity and AI recommendations">
+            <RecentActivityPanel tasks={tasks} />
+            <AIRecommendationsPanel disabled={state !== "ready"} googleConnected={googleSummary.connected} />
           </section>
 
           <div className="section-heading" id="progress"><div><h2>Your progress</h2><p>See where your time and attention are going</p></div><span className="live-label"><i /> All insights from your database</span></div>
