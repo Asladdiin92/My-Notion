@@ -45,7 +45,8 @@ import {
   TypeChart,
 } from "@/components/dashboard-charts";
 import { PlannerAssistant } from "@/components/planner-assistant";
-import { AIRecommendationsPanel, NextBestActionPanel, RecentActivityPanel } from "@/components/dashboard-insights";
+import { AIRecommendationsPanel, NextBestActionPanel } from "@/components/dashboard-insights";
+import { RecentActivityTimeline } from "@/components/recent-activity-timeline";
 import { ProviderIntegrations } from "@/components/provider-integrations";
 import type { Task, TaskOptions, TasksResponse } from "@/lib/types";
 import type { GoogleWorkspaceSummary } from "@/lib/google-types";
@@ -706,6 +707,7 @@ export default function DashboardPage() {
   const [search, setSearch] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
+  const [activityRefreshKey, setActivityRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [requestDayPlan, setRequestDayPlan] = useState(false);
@@ -749,6 +751,7 @@ export default function DashboardPage() {
     if (!dashboardTabs.includes(target)) return;
     window.history.replaceState(null, "", `#${target}`);
     setActiveTab(target);
+    if (target === "overview") setActivityRefreshKey((current) => current + 1);
     setSidebarOpen(false);
   }, []);
 
@@ -829,6 +832,7 @@ export default function DashboardPage() {
   }, [notify]);
 
   function handleTaskSaved(task: Task) {
+    setActivityRefreshKey((current) => current + 1);
     setTasks((current) => editingTask
       ? current.map((currentTask) => currentTask.id === task.id ? task : currentTask)
       : [task, ...current]);
@@ -841,6 +845,7 @@ export default function DashboardPage() {
   }
 
   function handleAssistantTaskSaved(task: Task) {
+    setActivityRefreshKey((current) => current + 1);
     setTasks((current) => current.some((item) => item.id === task.id)
       ? current.map((item) => item.id === task.id ? task : item)
       : [task, ...current]);
@@ -898,6 +903,7 @@ export default function DashboardPage() {
         throw new Error(result.error ?? "Could not update task completion.");
       }
       setTasks((current) => current.map((item) => item.id === task.id ? result.task! : item));
+      setActivityRefreshKey((current) => current + 1);
       setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
       setSuccessMessage(`“${task.title}” marked ${result.task.completed ? "complete" : "not complete"}.`);
       notify(`“${task.title}” marked ${result.task.completed ? "complete" : "not complete"}.`);
@@ -1108,7 +1114,10 @@ export default function DashboardPage() {
           </section>
 
           <section className="dashboard-insights-grid" aria-label="Recent activity and AI recommendations">
-            <RecentActivityPanel tasks={tasks} loading={state === "loading"} />
+            <RecentActivityTimeline
+              refreshKey={`${dashboardRefreshKey}:${activityRefreshKey}`}
+              onNavigate={selectTab}
+            />
             <AIRecommendationsPanel
               disabled={state !== "ready" || !googleSummaryLoaded}
               googleConnected={googleSummary.connected}

@@ -5,7 +5,6 @@ import {
   ArrowUpRight,
   CalendarClock,
   Check,
-  Circle,
   Clock3,
   ExternalLink,
   LoaderCircle,
@@ -14,10 +13,9 @@ import {
   Sparkles,
   Target,
 } from "lucide-react";
-import { formatPlannerDate, plannerDateKey, todayInPlannerTimeZone, PLANNER_TIME_ZONE } from "@/lib/planner-datetime";
+import { formatPlannerDate, PLANNER_TIME_ZONE } from "@/lib/planner-datetime";
 import { apiErrorMessage, readApiResponse } from "@/lib/api-response";
 import type { FocusWindow, NextActionCandidate, NextActionSelection } from "@/lib/next-action";
-import type { Task } from "@/lib/types";
 
 type Recommendation = {
   id: string;
@@ -151,85 +149,6 @@ export function NextBestActionPanel({ disabled, refreshKey }: { disabled: boolea
           </button>
         </div>
       )}
-    </section>
-  );
-}
-
-function activityDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Date unavailable";
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: PLANNER_TIME_ZONE,
-  }).format(date);
-}
-
-export function RecentActivityPanel({ tasks, loading }: { tasks: Task[]; loading: boolean }) {
-  const activities = tasks
-    .map((task) => {
-      const created = new Date(task.createdAt).getTime();
-      const updated = new Date(task.updatedAt || task.createdAt).getTime();
-      const hasUpdate = Number.isFinite(updated) && Number.isFinite(created) && updated > created + 60_000;
-      return {
-        task,
-        timestamp: hasUpdate ? task.updatedAt || task.createdAt : task.createdAt,
-        action: hasUpdate ? "Planner item updated" : "Added to your planner",
-      };
-    })
-    .filter(({ timestamp }) => Number.isFinite(new Date(timestamp).getTime()))
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice(0, 5);
-  const today = todayInPlannerTimeZone();
-
-  return (
-    <section className="panel activity-panel" aria-labelledby="recent-activity-title">
-      <div className="insight-heading">
-        <div>
-          <span className="insight-eyebrow">YOUR WORKSPACE</span>
-          <h2 id="recent-activity-title">Recent activity</h2>
-          <p>Latest additions and edits recorded in your Notion planner.</p>
-        </div>
-        <span className="insight-heading-icon activity-heading-icon"><Clock3 size={17} /></span>
-      </div>
-      {activities.length > 0 ? (
-        <ol className="activity-list">
-          {activities.map(({ task, timestamp, action }) => {
-            const dueDate = task.dateEnd || task.dueDate;
-            const status = task.completed
-              ? { label: "Completed", tone: "activity-status-complete" }
-              : dueDate && plannerDateKey(dueDate) < today
-                ? { label: "Overdue", tone: "activity-status-overdue" }
-                : { label: task.status || "In progress", tone: "activity-status-open" };
-            return (
-              <li className="activity-item" key={task.id}>
-                <span className={`activity-check${task.completed ? " is-complete" : ""}`}>
-                  {task.completed ? <Check size={14} strokeWidth={2.5} /> : <Circle size={13} strokeWidth={2} />}
-                </span>
-                <div className="activity-copy">
-                  <strong>{task.title}</strong>
-                  <span>{action}{task.area && task.area !== "Unassigned" ? ` · ${task.area}` : ""}</span>
-                </div>
-                <time dateTime={timestamp}>{activityDate(timestamp)}</time>
-                <span className={`activity-status ${status.tone}`}>{status.label}</span>
-              </li>
-            );
-          })}
-        </ol>
-      ) : loading ? (
-        <div className="activity-empty">
-          <LoaderCircle size={15} className="spin" />
-          <p>Loading recent planner activity…</p>
-        </div>
-      ) : (
-        <div className="activity-empty">
-          <span className="activity-check"><Circle size={13} /></span>
-          <p>Planner activity will appear here when items are added or updated.</p>
-        </div>
-      )}
-      <p className="activity-footnote">This feed reflects planner timestamps; it isn&apos;t a complete record of activity outside Notion.</p>
     </section>
   );
 }

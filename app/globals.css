@@ -829,6 +829,10 @@ body { background: radial-gradient(ellipse at 78% 0, #e9eee5 0, transparent 34%)
   .activity-panel, .recommendations-panel { padding: 15px; }
   .activity-item { grid-template-columns: 23px minmax(0, 1fr) auto; gap: 7px; }
   .activity-item time { grid-column: 2; grid-row: 2; }
+  .timeline-item { grid-template-columns: 23px minmax(0, 1fr) auto; align-items: start; }
+  .timeline-item time { grid-column: 2; grid-row: 2; }
+  .timeline-item .activity-related-link { grid-column: 3; grid-row: 1 / span 2; }
+  .timeline-error button { grid-column: 2 / -1; justify-self: start; margin: 0; }
   .activity-status { grid-column: 3; grid-row: 1 / span 2; }
   .recommendation-card { grid-template-columns: 30px minmax(0, 1fr); gap: 8px; }
   .recommendation-icon { width: 29px; height: 29px; }
@@ -840,6 +844,8 @@ body { background: radial-gradient(ellipse at 78% 0, #e9eee5 0, transparent 34%)
   .activity-item, .recommendation-feedback { animation: none; }
   .recommendation-card, .recommendation-run { transition: none; }
   .recommendation-card:hover, .recommendation-run:hover:not(:disabled) { transform: none; }
+  .timeline-skeleton-icon, .timeline-skeleton-copy i, .timeline-skeleton-time { animation: none; }
+  .activity-related-link { transition: none; }
 }
 
 :root {
@@ -1002,6 +1008,28 @@ body::before { position: fixed; z-index: -1; inset: 0; background: radial-gradie
 .activity-copy > span, .activity-item time, .activity-footnote, .recommendations-footnote { color: #7f9e8e; font-family: var(--font-mono); font-size: 8px; }
 .activity-copy strong { font-family: var(--font-mono); font-size: 9px; }
 .activity-check { border-color: #2bd99042; background: #09231a; color: #55edaa; box-shadow: 0 0 10px #20df9b12; }
+.timeline-item { grid-template-columns: 23px minmax(0, 1fr) auto auto; min-height: 59px; }
+.timeline-copy > span { display: -webkit-box; overflow: hidden; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.45; }
+.activity-tone-green { border-color: #2bd99055; background: #09231a; color: #55edaa; }
+.activity-tone-cyan { border-color: #36cfe344; background: #0b2022; color: #63dbe6; }
+.activity-tone-violet { border-color: #a18af044; background: #19152a; color: #b6a3ff; }
+.activity-related-link { display: grid; width: 23px; height: 23px; place-items: center; border: 1px solid #2edc9a30; border-radius: 7px; color: #75dcb0; transition: background .16s ease, border-color .16s ease; }
+.activity-related-link:hover { border-color: #31f0a9; background: #123526; }
+.timeline-state { border-color: #40ce9b3b; background: #0a1613a8; color: #65e8b0; }
+.timeline-state strong { color: #c9eadd; font-family: var(--font-mono); font-size: 9px; }
+.timeline-state p { color: #87a797; font-family: var(--font-mono); font-size: 8px; line-height: 1.5; }
+.timeline-error { border-color: #f17b8c38; }
+.timeline-error-icon { display: grid; width: 22px; height: 22px; flex: 0 0 auto; place-items: center; border: 1px solid #f17b8c44; border-radius: 50%; color: #ff9cab; }
+.timeline-error button { margin-left: auto; padding: 6px 9px; border: 1px solid #2edc9a3b; border-radius: 7px; background: #0d241a; color: #88f0bb; cursor: pointer; font-family: var(--font-mono); font-size: 8px; }
+.timeline-skeleton { gap: 0; }
+.timeline-skeleton-row { pointer-events: none; }
+.timeline-skeleton-icon, .timeline-skeleton-copy i, .timeline-skeleton-time { display: block; border-radius: 5px; background: #18342a; animation: timeline-pulse 1.2s ease-in-out infinite alternate; }
+.timeline-skeleton-icon { width: 22px; height: 22px; border-radius: 50%; }
+.timeline-skeleton-copy { display: grid; gap: 6px; }
+.timeline-skeleton-copy i:first-child { width: min(72%, 180px); height: 8px; }
+.timeline-skeleton-copy i:last-child { width: min(48%, 120px); height: 6px; opacity: .7; }
+.timeline-skeleton-time { width: 44px; height: 7px; }
+@keyframes timeline-pulse { from { opacity: .45; } to { opacity: .9; } }
 .activity-status { font-family: var(--font-mono); }
 .recommendation-card { border-color: #62e4b71e; background: #0b1715bf; backdrop-filter: blur(14px); }
 .recommendation-card:hover { border-color: #3fe8ac73; box-shadow: 0 10px 30px #0004, 0 0 20px #0bd69617; }
