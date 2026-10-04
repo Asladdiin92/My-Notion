@@ -46,6 +46,7 @@ import {
 } from "@/components/dashboard-charts";
 import { PlannerAssistant } from "@/components/planner-assistant";
 import { AIRecommendationsPanel, NextBestActionPanel, RecentActivityPanel } from "@/components/dashboard-insights";
+import { ProviderIntegrations } from "@/components/provider-integrations";
 import type { Task, TaskOptions, TasksResponse } from "@/lib/types";
 import type { GoogleWorkspaceSummary } from "@/lib/google-types";
 import { apiErrorMessage, readApiResponse } from "@/lib/api-response";
@@ -760,7 +761,16 @@ export default function DashboardPage() {
       setTaskOptions(result.options ?? null);
       setState("ready");
       setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
-      if (showToast) notify("Workspace data refreshed.");
+      if (showToast) {
+        notify("Workspace data refreshed.");
+        try {
+          const response = await fetch("/api/telegram/notify", { method: "POST" });
+          const result = await readApiResponse<{ sent?: boolean }>(response);
+          if (result.sent) notify("Workspace refreshed. Counts-only Telegram summary sent.");
+        } catch (notificationError) {
+          notify(apiErrorMessage(notificationError, "Workspace refreshed, but Telegram could not be notified."), "error");
+        }
+      }
     } catch (loadError) {
       setTasks([]);
       setState("error");
@@ -1078,6 +1088,8 @@ export default function DashboardPage() {
               </div>
             </>}
           </section>
+
+          <ProviderIntegrations />
 
           {state === "error" && <div className="connection-banner"><span className="banner-icon"><AlertTriangle size={16} /></span><div><strong>We couldn’t load your Notion tasks</strong><p>{error}</p></div><button onClick={() => void loadTasks()}>Try again</button></div>}
           {state === "loading" && tasks.length === 0 && <div className="loading-banner"><LoaderCircle size={15} className="spin" /> Connecting securely to your Notion database...</div>}

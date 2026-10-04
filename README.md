@@ -8,8 +8,10 @@ create, edit, and archive planner items in the same database.
 This guide explains how the application works, what each part is for, and how
 to run, extend, and deploy it.
 
-Notion remains the single source of truth. The proposed PostgreSQL tables and
-indexes are not created: Clerk handles authentication, the existing Notion
+Notion remains the source of truth for planner data. MongoDB stores only
+Telegram link/pairing state and short-lived one-time approvals for Telegram
+and GitHub writes; it does not duplicate planner items. Clerk handles
+authentication, the existing Notion
 People property supplies optional assignees, and AI plans stay temporary until
 their proposed tasks are confirmed. The application reads every database page
 through Notion pagination and maps optional columns only when the matching
@@ -25,6 +27,7 @@ property exists. Missing optional columns are not fabricated or seeded.
 - [Run it locally](#run-it-locally)
 - [Connect your Notion database](#connect-your-notion-database)
 - [Connect Google Workspace](#connect-google-workspace)
+- [Connect GitHub and Telegram](#connect-github-and-telegram)
 - [Deploy to Vercel](#deploy-to-vercel)
 - [Security notes](#security-notes)
 - [Troubleshooting](#troubleshooting)
@@ -65,13 +68,18 @@ Next.js middleware + API access check (allowlisted verified email)
         │ POST /api/assistant/next-action on-demand ranked next-task explanation
         │ GET /api/google/summary   Gmail, Calendar, and Drive snapshot
         │ POST /api/google/assistant on-demand task and Google data analysis
+        │ GET /api/github repository, issue, PR, review, and check snapshots
+        │ POST /api/github/actions server-held, one-time confirmed GitHub writes
+        │ POST /api/telegram/webhook verified Telegram bot updates
         ▼
 Next.js server (API routes + Notion mapping + short-lived encrypted Google session)
         │
         │ NOTION_API_KEY / GEMINI_API_KEY / GOOGLE_CLIENT_SECRET / SESSION_SECRET (server-only)
-        │ NOTION_DATABASE_ID
+        │ NOTION_DATABASE_ID / MONGO_URI / GITHUB_PRIVATE_KEY / TELEGRAM_BOT_TOKEN (server-only)
         ├── Notion API (your existing planner database)
         ├── Google Gmail / Calendar / Drive APIs (on demand)
+        ├── GitHub App installation (short-lived access tokens)
+        ├── Telegram bot (linked private chat; confirmed planner actions)
         └── Gemini API (only when you ask the AI assistant)
 ```
 
@@ -90,11 +98,24 @@ the browser bundle or API response.
 | **Lucide React** | Supplies consistent icons for navigation, metrics, actions, and states. |
 | **Notion REST API** | Stores the real planner data and creates, updates, or archives pages in your database. This project calls it with the server's built-in `fetch`; it does not need the Notion SDK. |
 | **CSS** | Styles the responsive layout, charts, calendar, form, and phone/tablet views. |
+| **MongoDB** | Stores integration links, short-lived approval records, and webhook update IDs only; it is not the planner database. |
+| **GitHub App** | Reads installed repository issues/PRs/reviews/checks and runs confirmed issue/comment/PR actions. |
+| **Telegram Bot API** | Provides linked planner commands and optional counts-only refresh notifications. |
 | **Vercel** | Can host the Next.js app and supply production environment variables. |
 
 Dependencies and commands are recorded in `package.json` and
-`package-lock.json`. No separate application database is used: **Notion is the
-database**.
+`package-lock.json`. **Notion remains the planner database**; MongoDB stores
+only the integration metadata described above.
+
+## Connect GitHub and Telegram
+
+Follow [`connect.md`](./connect.md) for provider-console setup, required
+permissions, environment variables, Vercel deployment, Telegram pairing, and
+troubleshooting. GitHub and Telegram credentials are server-only. GitHub
+external writes and Telegram Notion changes require one-time explicit
+approval; GitHub/Telegram integrations do not expose secrets to the AI
+assistant. MongoDB Atlas must be configured for their account links and
+expiring approvals to work.
 
 ## How Notion data flows through the app
 
@@ -491,7 +512,9 @@ Drive are requested together. This implementation is session-only: it requests
 online access, keeps an encrypted, HTTP-only Google access-token cookie for at
 most one hour, and does not store a Google refresh token, email body, or Drive
 file content in MongoDB or elsewhere. You may need to reconnect after the
-session expires. `MONGO_URI` is not used. There is no background polling,
+session expires. Google OAuth does not use `MONGO_URI`; MongoDB is used only
+for Telegram integration state and short-lived external-action approvals.
+There is no background polling,
 continuous activity history, or autonomous email/task creation in this
 stateless setup.
 
