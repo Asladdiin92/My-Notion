@@ -1,13 +1,13 @@
 :root {
   color-scheme: light;
-  --bg: #f7f7f5;
+  --bg: #f4f5f1;
   --surface: #fff;
-  --sidebar: #fbfbf9;
-  --ink: #282a25;
-  --muted: #8c8e87;
-  --line: #eaeae6;
-  --green: #708368;
-  --green-dark: #5c7154;
+  --sidebar: #fafbf8;
+  --ink: #252b25;
+  --muted: #737c73;
+  --line: #e5e9e1;
+  --green: #71866c;
+  --green-dark: #50664e;
   --font-main: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: "Manrope", var(--font-main);
 }
@@ -624,3 +624,84 @@ button { color: inherit; }
 .access-denied p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
 
 .topbar-right > .cl-userButton-root { margin-left: 2px; }
+
+body { background: radial-gradient(ellipse at 78% 0, #e9eee5 0, transparent 34%), var(--bg); color: var(--ink); font-size: 13px; }
+.sidebar { border-right-color: #e4e8e1; box-shadow: 5px 0 24px #28332608; }
+.brand { padding-bottom: 31px; }
+.brand-mark { border-color: #dfe6db; background: linear-gradient(145deg, #fff, #f2f5ef); color: var(--green-dark); box-shadow: 0 2px 6px #394b3210; }
+.brand-copy strong { color: #2e382e; font-size: 13px; }
+.brand-copy small, .profile-row small { color: #788278; font-size: 10px; }
+.sidebar-label { color: #818b80; font-size: 10px; letter-spacing: 1.25px; }
+.sidebar-nav { gap: 5px; margin-top: 13px; }
+.nav-link { min-height: 42px; gap: 11px; color: #5f695e; font-size: 12px; }
+.nav-link:hover, .database-link:hover { background: #f0f4ed; color: #354435; }
+.nav-link.active { background: #e9efe6; color: #40563d; box-shadow: inset 3px 0 #758c6d; }
+.nav-link.active svg { color: #526e4d; }
+.database-link { min-height: 39px; color: #596458; font-size: 11px; }
+.notion-status { color: #737d72; font-size: 10px; }
+.profile-row { border-top-color: #e5e9e1; }
+.profile-row strong { font-size: 11px; }
+.main-content { background: linear-gradient(180deg, #f8f9f6 0, #f4f5f1 420px); }
+.topbar { height: 64px; border-bottom-color: #e5e9e1; background: #fafbf8eF; }
+.breadcrumbs { color: #737d72; font-size: 11px; }
+.breadcrumbs strong { color: #374137; }
+.updated-label, .connection-label { color: #70796f; font-size: 10px; }
+.refresh-button { min-height: 33px; padding-inline: 11px; border-color: #dfe5dc; border-radius: 8px; color: #4f5c4d; font-size: 10px; }
+.page-wrap { width: min(100%, 1400px); padding: 34px 40px 28px; }
+.command-center-banner { min-height: 170px; margin-bottom: 24px; padding: 30px; border-color: #354b3b; border-radius: 15px; background: radial-gradient(ellipse at 84% 0, #a1b59050, transparent 31%), linear-gradient(115deg, #293c30 0%, #405747 58%, #506652 100%); box-shadow: 0 16px 38px #30423224; }
+.command-center-banner::after { top: -108px; right: 13%; width: 270px; height: 270px; border-color: #ffffff18; }
+.command-center-banner h1 { font-size: clamp(23px, 2.5vw, 32px); letter-spacing: .8px; }
+.command-center-banner .date-line { font-size: 11px; }
+.command-center-banner p { font-size: 12px; }
+.command-center-banner .open-notion-button { min-height: 38px; padding-inline: 14px; border-radius: 8px; font-size: 10px; }
+.panel { border-color: #e4e8e1; border-radius: 12px; box-shadow: 0 3px 12px #34452e08; }
+.my-day-panel { margin-bottom: 22px; padding: 18px 19px; }
+.panel-heading h2, .panel-heading h3 { color: #303a30; font-size: 13px; }
+.panel-heading p { color: #788278; font-size: 10px; }
+.my-day-item { min-height: 54px; }
+.my-day-title strong { color: #374137; font-size: 11px; }
+.my-day-title > span { color: #7b857a; font-size: 9px; }
+.my-day-priority { font-size: 9px; }
+.my-day-footer { color: #758074; font-size: 9px; }
+.my-day-footer button { padding: 7px 9px; border-radius: 7px; font-size: 9px; }
+.metrics-grid { gap: 14px; margin-bottom: 32px; }
+.metric-card { min-height: 124px; padding: 16px 17px; border-color: #e3e8df; border-radius: 11px; box-shadow: 0 4px 14px #34452e08; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+.metric-card:hover { transform: translateY(-2px); border-color: #d4decf; box-shadow: 0 10px 22px #34452e12; }
+.metric-head { color: #647064; font-size: 11px; }
+.metric-icon { width: 30px; height: 30px; border-radius: 9px; }
+.metric-value-row { margin-top: 9px; }
+.metric-value { color: #2d372d; font-size: 29px; }
+.metric-note { margin-top: 6px; color: #798379; font-size: 10px; }
+.section-heading { margin-bottom: 15px; }
+.section-heading h2 { color: #303a30; font-size: 17px; }
+.section-heading p { color: #788278; font-size: 10px; }
+.live-label { color: #737e72; font-size: 9px; }
+.charts-grid { gap: 15px; margin-bottom: 26px; }
+.chart-panel { min-height: 230px; padding: 17px 18px 13px; }
+.chart-panel .panel-heading h3 { font-size: 13px; }
+.chart-panel .panel-heading p { font-size: 10px; }
+.progress-detail-card { padding: 15px; }
+.progress-detail-card .panel-heading h3 { font-size: 11px; }
+.progress-detail-card .panel-heading p { font-size: 9px; }
+:where(a, button, input, select, textarea):focus-visible { outline: 2px solid #71866c; outline-offset: 3px; }
+
+@media (max-width: 1050px) {
+  .page-wrap { padding-inline: 26px; }
+}
+
+@media (max-width: 790px) {
+  .page-wrap { padding: 27px 18px 22px; }
+}
+
+@media (max-width: 590px) {
+  .topbar { height: 58px; }
+  .page-wrap { padding: 22px 14px 20px; }
+  .command-center-banner { min-height: 170px; padding: 20px; }
+  .command-center-banner h1 { font-size: clamp(19px, 5.5vw, 25px); }
+  .metrics-grid { gap: 10px; margin-bottom: 26px; }
+  .metric-card { min-height: 112px; padding: 13px; }
+  .metric-head { font-size: 10px; }
+  .metric-value { font-size: 26px; }
+  .metric-note { font-size: 9px; }
+  .my-day-panel { padding: 15px; }
+}
