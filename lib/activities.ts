@@ -1,5 +1,6 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { ObjectId, type Collection } from "mongodb";
 import { getMongoDb } from "@/lib/mongodb";
 
@@ -35,9 +36,12 @@ export type Activity = {
   createdAt: Date;
   updatedAt: Date;
 };
-type ActivityDocument = Omit<Activity, "_id"> & { _id?: ObjectId };
+type ActivityDocument = Omit<Activity, "_id"> & { _id?: ObjectId; idempotencyKey?: string };
+type ActivityCursor = { occurredAt: Date; id: ObjectId };
+export type ActivityPage = { activities: Activity[]; nextCursor: string | null };
 
 const COLLECTION_NAME = "activities";
+export const MAX_ACTIVITY_PAGE_SIZE = 50;
 const MAX_METADATA_BYTES = 4096;
 const MAX_METADATA_DEPTH = 5;
 const SENSITIVE_KEY = /(?:secret|password|passwd|token|authorization|cookie|credential|api.?key|private.?key|email|phone|address|access.?key)/i;
@@ -56,6 +60,7 @@ export type NewActivity = {
   entityType?: string;
   entityId?: string;
   metadata?: Record<string, unknown>;
+  occurredAt?: Date;
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -89,6 +94,12 @@ function validateMetadataValue(value: unknown, depth: number): void {
   }
 }
 
+function withoutIdempotencyKey(document: ActivityDocument): Activity {
+  const activity = { ...document };
+  delete activity.idempotencyKey;
+  return activity as Activity;
+}
+
 function optionalText(input: Record<string, unknown>, field: string, maximum: number): string | undefined {
   const value = input[field];
   if (value === undefined) return undefined;
@@ -109,7 +120,7 @@ export function validateActivityInput(
   }
   if (!isPlainObject(input)) throw new Error("Activity input must be an object.");
   const allowedFields = new Set([
-    "type", "source", "title", "description", "entityType", "entityId", "metadata",
+    "type", "source", "title", "description", "entityType", "entityId", "metadata", "occurredAt",
   ]);
   if (Object.keys(input).some((key) => !allowedFields.has(key))) {
     throw new Error("Activity input contains unsupported fields; user ownership is server-controlled.");
@@ -136,6 +147,10 @@ export function validateActivityInput(
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) {
     throw new Error("Activity timestamp is invalid.");
   }
+  const occurredAt = input.occurredAt === undefined ? now : input.occurredAt;
+  if (!(occurredAt instanceof Date) || !Number.isFinite(occurredAt.getTime())) {
+    throw new Error("Activity timestamp is invalid.");
+  }
   const timestamp = new Date(now.getTime());
   return {
     userId: authenticatedUserId,
@@ -146,7 +161,7 @@ export function validateActivityInput(
     ...(entityType !== undefined ? { entityType } : {}),
     ...(entityId !== undefined ? { entityId } : {}),
     ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
-    occurredAt: timestamp,
+    occurredAt: new Date(occurredAt.getTime()),
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -159,8 +174,12 @@ async function activityCollection(): Promise<Collection<ActivityDocument>> {
     activityCollectionPromise = getMongoDb().then(async (db) => {
       const collection = db.collection<ActivityDocument>(COLLECTION_NAME);
       await Promise.all([
-        collection.createIndex({ userId: 1, occurredAt: -1 }),
+        collection.createIndex({ userId: 1, occurredAt: -1, _id: -1 }),
         collection.createIndex({ userId: 1, type: 1 }),
+        collection.createIndex(
+          { userId: 1, idempotencyKey: 1 },
+          { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } } },
+        ),
       ]);
       return collection;
     }).catch((error: unknown) => {
@@ -172,9 +191,107 @@ async function activityCollection(): Promise<Collection<ActivityDocument>> {
   return activityCollectionPromise;
 }
 
-export async function recordActivity(authenticatedUserId: string, input: unknown): Promise<Activity> {
+export function createActivityIdempotencyKey(
+  authenticatedUserId: string,
+  type: ActivityType,
+  operationKey: string,
+): string {
+  return createHash("sha256")
+    .update(`${authenticatedUserId}\0${type}\0${operationKey}`)
+    .digest("hex");
+}
+
+export function encodeActivityCursor(activity: Pick<Activity, "_id" | "occurredAt">): string {
+  return Buffer.from(JSON.stringify({
+    occurredAt: activity.occurredAt.toISOString(),
+    id: activity._id.toHexString(),
+  })).toString("base64url");
+}
+
+export function decodeActivityCursor(value: string): ActivityCursor {
+  if (!value || value.length > 512 || !/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error("Invalid activities cursor.");
+  }
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Invalid activities cursor.");
+    }
+    const cursor = parsed as Record<string, unknown>;
+    if (Object.keys(cursor).length !== 2 || typeof cursor.occurredAt !== "string" ||
+        typeof cursor.id !== "string" || !ObjectId.isValid(cursor.id) ||
+        new ObjectId(cursor.id).toHexString() !== cursor.id.toLowerCase()) {
+      throw new Error("Invalid activities cursor.");
+    }
+    const occurredAt = new Date(cursor.occurredAt);
+    if (!Number.isFinite(occurredAt.getTime()) || occurredAt.toISOString() !== cursor.occurredAt) {
+      throw new Error("Invalid activities cursor.");
+    }
+    return { occurredAt, id: new ObjectId(cursor.id) };
+  } catch {
+    throw new Error("Invalid activities cursor.");
+  }
+}
+
+export async function recordActivity(
+  authenticatedUserId: string,
+  input: unknown,
+  idempotencyKey?: string,
+): Promise<Activity> {
   const activity = validateActivityInput(authenticatedUserId, input);
+  if (idempotencyKey !== undefined &&
+      (typeof idempotencyKey !== "string" || !/^[a-f0-9]{64}$/.test(idempotencyKey))) {
+    throw new Error("Activity idempotency key is invalid.");
+  }
   const collection = await activityCollection();
-  const result = await collection.insertOne(activity);
-  return { ...activity, _id: result.insertedId };
+  const document: ActivityDocument = {
+    ...activity,
+    ...(idempotencyKey ? { idempotencyKey } : {}),
+  };
+  try {
+    const result = await collection.insertOne(document);
+    return { ...activity, _id: result.insertedId };
+  } catch (error) {
+    if (idempotencyKey && error && typeof error === "object" &&
+        "code" in error && error.code === 11000) {
+      const existing = await collection.findOne({ userId: authenticatedUserId, idempotencyKey });
+      if (existing) return withoutIdempotencyKey(existing);
+    }
+    throw new Error("Activity storage could not save the event.");
+  }
+}
+
+export async function listActivities(
+  authenticatedUserId: string,
+  limit: number,
+  cursor?: string,
+): Promise<ActivityPage> {
+  if (typeof authenticatedUserId !== "string" || !authenticatedUserId.trim() ||
+      authenticatedUserId.length > 256 || authenticatedUserId !== authenticatedUserId.trim()) {
+    throw new Error("A stable authenticated user ID is required to list activities.");
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_ACTIVITY_PAGE_SIZE) {
+    throw new Error("Activity page size is invalid.");
+  }
+  const after = cursor !== undefined ? decodeActivityCursor(cursor) : undefined;
+  const collection = await activityCollection();
+  const filter = after
+    ? {
+        userId: authenticatedUserId,
+        $or: [
+          { occurredAt: { $lt: after.occurredAt } },
+          { occurredAt: after.occurredAt, _id: { $lt: after.id } },
+        ],
+      }
+    : { userId: authenticatedUserId };
+  const documents = await collection.find(filter)
+    .sort({ occurredAt: -1, _id: -1 })
+    .limit(limit + 1)
+    .toArray();
+  const hasMore = documents.length > limit;
+  const activities = documents.slice(0, limit).map(withoutIdempotencyKey);
+  return {
+    activities,
+    nextCursor: hasMore ? encodeActivityCursor(activities[activities.length - 1]) : null,
+  };
 }

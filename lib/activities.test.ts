@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateActivityInput } from "./activities";
+import {
+  createActivityIdempotencyKey,
+  decodeActivityCursor,
+  encodeActivityCursor,
+  validateActivityInput,
+} from "./activities";
+import { ObjectId } from "mongodb";
 
 const validInput = {
   type: "task_created",
@@ -22,6 +28,44 @@ test("validates activity enums and builds ownership/timestamps from server argum
   assert.equal(activity.occurredAt.toISOString(), timestamp.toISOString());
   assert.equal(activity.createdAt.toISOString(), timestamp.toISOString());
   assert.equal(activity.updatedAt.toISOString(), timestamp.toISOString());
+});
+
+test("accepts a valid explicit event time while generating record timestamps server-side", () => {
+  const occurredAt = new Date("2026-10-04T12:00:00.000Z");
+  const createdAt = new Date("2026-10-05T00:00:00.000Z");
+  const activity = validateActivityInput(
+    "clerk-user-123",
+    { ...validInput, occurredAt },
+    createdAt,
+  );
+
+  assert.equal(activity.occurredAt.toISOString(), occurredAt.toISOString());
+  assert.equal(activity.createdAt.toISOString(), createdAt.toISOString());
+  assert.throws(
+    () => validateActivityInput("clerk-user-123", { ...validInput, occurredAt: "2026-10-04T12:00:00.000Z" }),
+    /timestamp is invalid/,
+  );
+});
+
+test("encodes and validates stable activity cursors", () => {
+  const event = {
+    _id: new ObjectId("65ac5e9e16f648f7a031dd01"),
+    occurredAt: new Date("2026-10-05T00:00:00.000Z"),
+  };
+  const cursor = encodeActivityCursor(event);
+  const decoded = decodeActivityCursor(cursor);
+
+  assert.equal(decoded.id.toHexString(), event._id.toHexString());
+  assert.equal(decoded.occurredAt.toISOString(), event.occurredAt.toISOString());
+  assert.throws(() => decodeActivityCursor("not-a-cursor"), /Invalid activities cursor/);
+  assert.throws(() => decodeActivityCursor(""), /Invalid activities cursor/);
+});
+
+test("creates deterministic user-scoped idempotency hashes", () => {
+  const first = createActivityIdempotencyKey("user-1", "task_created", "task:123");
+  assert.equal(first, createActivityIdempotencyKey("user-1", "task_created", "task:123"));
+  assert.notEqual(first, createActivityIdempotencyKey("user-2", "task_created", "task:123"));
+  assert.notEqual(first, createActivityIdempotencyKey("user-1", "task_completed", "task:123"));
 });
 
 test("rejects missing or unstable authenticated user IDs", () => {

@@ -1,6 +1,8 @@
+import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { createNotionTask, fetchNotionTaskOptions, fetchNotionTasks } from "@/lib/notion";
 import { hasPlannerAccess } from "@/lib/access";
+import { logActivity } from "@/lib/activity-logger";
 import { isSameOrigin, parseTaskInput } from "@/lib/task-request";
 import type { TasksResponse } from "@/lib/types";
 
@@ -35,6 +37,10 @@ export async function POST(request: Request) {
   if (!await hasPlannerAccess()) {
     return NextResponse.json({ ok: false, error: "You are not authorized to modify this planner." }, { status: 403 });
   }
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "Sign in before modifying this planner." }, { status: 401 });
+  }
   if (!isSameOrigin(request)) {
     return NextResponse.json({ ok: false, error: "This request must come from the dashboard." }, { status: 403 });
   }
@@ -44,6 +50,15 @@ export async function POST(request: Request) {
 
   try {
     const task = await createNotionTask(parsed.input);
+    await logActivity({
+      userId,
+      type: "task_created",
+      source: "dashboard",
+      title: "Created a planner task",
+      entityType: "task",
+      entityId: task.id,
+      idempotencyKey: `task-created:${task.id}`,
+    });
     return NextResponse.json({ ok: true, task }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not create the planner item.";
