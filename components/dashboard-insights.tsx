@@ -7,13 +7,16 @@ import {
   Check,
   Circle,
   Clock3,
+  ExternalLink,
   LoaderCircle,
   type LucideIcon,
   Mail,
   Sparkles,
   Target,
 } from "lucide-react";
-import { plannerDateKey, todayInPlannerTimeZone, PLANNER_TIME_ZONE } from "@/lib/planner-datetime";
+import { formatPlannerDate, plannerDateKey, todayInPlannerTimeZone, PLANNER_TIME_ZONE } from "@/lib/planner-datetime";
+import { apiErrorMessage, readApiResponse } from "@/lib/api-response";
+import type { FocusWindow, NextActionCandidate, NextActionSelection } from "@/lib/next-action";
 import type { Task } from "@/lib/types";
 
 type Recommendation = {
@@ -25,6 +28,115 @@ type Recommendation = {
   mode: "ask" | "secretary";
   disabled?: boolean;
 };
+
+type NextActionResponse = NextActionSelection & {
+  explanation?: { reason: string; firstStep: string };
+  calendarConnected: boolean;
+  currentLocalTime?: string;
+  error?: string;
+};
+
+function safeTaskUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function focusWindowLabel(window: FocusWindow): string {
+  const date = new Intl.DateTimeFormat("en", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: PLANNER_TIME_ZONE,
+  }).format(new Date(`${window.date}T12:00:00Z`));
+  return `${date}, ${window.startTime}–${window.endTime}`;
+}
+
+export function NextBestActionPanel({ disabled }: { disabled: boolean }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<NextActionResponse | null>(null);
+
+  async function requestRecommendation() {
+    setLoading(true);
+    setError("");
+    setResult(null);
+    try {
+      const response = await fetch("/api/assistant/next-action", {
+        method: "POST",
+        cache: "no-store",
+        signal: AbortSignal.timeout(45_000),
+      });
+      const payload = await readApiResponse<NextActionResponse>(response);
+      if (!response.ok) throw new Error(payload.error ?? "Could not get a next-action recommendation.");
+      if (payload.candidate && (!payload.focusWindow || !payload.explanation?.reason || !payload.explanation.firstStep)) {
+        throw new Error("The server returned an incomplete recommendation. Please try again.");
+      }
+      setResult(payload);
+    } catch (requestError) {
+      setError(apiErrorMessage(requestError, "Could not get a next-action recommendation."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const candidate: NextActionCandidate | null = result?.candidate ?? null;
+  const dueDate = candidate?.dueDate;
+  const validDueDate = Boolean(dueDate && !Number.isNaN(new Date(dueDate).getTime()));
+  const safeUrl = candidate ? safeTaskUrl(candidate.url) : undefined;
+
+  return (
+    <section className="panel next-action-panel" aria-labelledby="next-action-title">
+      <div className="panel-heading next-action-heading">
+        <div>
+          <span className="insight-eyebrow">ON-DEMAND · APPROVAL ONLY</span>
+          <h2 id="next-action-title">Next best action</h2>
+          <p>Ranks incomplete planner items against the next available 08:30–18:00 Addis Ababa focus window.</p>
+        </div>
+        <span className="chart-heading-icon tone-green"><Target size={15} /></span>
+      </div>
+      {!result && !error && (
+        <div className="next-action-intro">
+          <p>Nothing is sent to AI until you request a recommendation. Nothing is changed in Notion.</p>
+          <button type="button" className="next-action-run" onClick={() => void requestRecommendation()} disabled={disabled || loading}>
+            {loading ? <><LoaderCircle size={13} className="spin" /> Checking your planner…</> : <><Sparkles size={13} /> Recommend my next action</>}
+          </button>
+        </div>
+      )}
+      {error && <div className="next-action-error" role="alert"><p>{error}</p><button type="button" onClick={() => void requestRecommendation()} disabled={disabled || loading}>Try again</button></div>}
+      {result && !candidate && <div className="next-action-empty" role="status"><p>{result.message ?? "No incomplete planner item is available to recommend."}</p>
+        <button type="button" className="next-action-run" onClick={() => void requestRecommendation()} disabled={disabled || loading}>Check again</button></div>}
+      {result && candidate && result.focusWindow && result.explanation && (
+        <div className="next-action-result" aria-live="polite">
+          {result.currentLocalTime && <p className="next-action-checked">Checked {result.currentLocalTime}</p>}
+          <div className="next-action-task">
+            <div><span className="next-action-overline">RECOMMENDED TASK</span><strong>{candidate.title}</strong></div>
+            {safeUrl && <a href={safeUrl} target="_blank" rel="noreferrer" aria-label={`Open ${candidate.title} in Notion`}><ExternalLink size={13} /></a>}
+          </div>
+          <div className="next-action-facts">
+            <span className={`next-action-deadline deadline-${candidate.dueLabel.toLowerCase().replaceAll(" ", "-")}`}>{candidate.dueLabel}{validDueDate ? ` · ${formatPlannerDate(dueDate!)}` : ""}</span>
+            <span>{candidate.priority} priority</span>
+            <span>{candidate.estimatedMinutes === null ? "No duration estimate recorded" : `Notion estimate · ${candidate.estimatedMinutes} min`}</span>
+          </div>
+          <p className="next-action-window"><Clock3 size={12} /> Focus window: {focusWindowLabel(result.focusWindow)} ({result.focusWindow.availableMinutes} min available)</p>
+          {!result.calendarConnected && <p className="next-action-calendar-note">Google Calendar isn&apos;t connected, so meeting conflicts could not be checked.</p>}
+          {result.calendarConnected && <p className="next-action-calendar-note">{result.focusWindow.nextEventStart
+            ? `Free time ends at ${result.focusWindow.nextEventStart} for your next calendar event.`
+            : "Calendar checked; no meeting conflicts fall within this focus window."}</p>}
+          {result.explanation.reason && <div className="next-action-reason"><strong>Why this task</strong><p>{result.explanation.reason}</p></div>}
+          <div className="next-action-first-step"><strong>First step</strong><p>{result.explanation.firstStep}</p></div>
+          {candidate.nextAction && <p className="next-action-recorded">Recorded next action: {candidate.nextAction}</p>}
+          <button type="button" className="next-action-rerun" onClick={() => void requestRecommendation()} disabled={disabled || loading}>
+            {loading ? <LoaderCircle size={12} className="spin" /> : <Sparkles size={12} />} Recheck priorities
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
 
 function activityDate(value: string): string {
   const date = new Date(value);
@@ -160,14 +272,14 @@ export function AIRecommendationsPanel({
           ? { question: recommendation.prompt }
           : { mode: "ask", question: recommendation.prompt }),
       });
-      const result = await response.json() as { answer?: string; error?: string };
+      const result = await readApiResponse<{ answer?: string; error?: string }>(response);
       if (!response.ok || !result.answer) {
         throw new Error(result.error ?? "The assistant could not complete this recommendation.");
       }
       setResults((current) => ({ ...current, [recommendation.id]: result.answer! }));
       onNotify(`${recommendation.title} is ready.`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "The assistant could not complete this recommendation.";
+      const message = apiErrorMessage(error, "The assistant could not complete this recommendation.");
       setErrors((current) => ({
         ...current,
         [recommendation.id]: message,

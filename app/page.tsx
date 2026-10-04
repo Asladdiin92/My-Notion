@@ -45,9 +45,10 @@ import {
   TypeChart,
 } from "@/components/dashboard-charts";
 import { PlannerAssistant } from "@/components/planner-assistant";
-import { AIRecommendationsPanel, RecentActivityPanel } from "@/components/dashboard-insights";
+import { AIRecommendationsPanel, NextBestActionPanel, RecentActivityPanel } from "@/components/dashboard-insights";
 import type { Task, TaskOptions, TasksResponse } from "@/lib/types";
 import type { GoogleWorkspaceSummary } from "@/lib/google-types";
+import { apiErrorMessage, readApiResponse } from "@/lib/api-response";
 import {
   formatPlannerDate as formatDate,
   plannerDateKey,
@@ -231,25 +232,30 @@ function MetricCard({
 }
 
 function NotesPanel({ tasks }: { tasks: Task[] }) {
+  const validTimestamp = (value: string) => !Number.isNaN(new Date(value).getTime());
+  const noteTimestamp = (value: string) => validTimestamp(value) ? formatDate(value, { year: "numeric", month: "short", day: "numeric" }) : "Unavailable";
   const notes = tasks
     .flatMap((task) => task.notes?.trim()
-      ? [{ task, note: task.notes.trim(), timestamp: task.updatedAt || task.createdAt }]
+      ? [{ task, note: task.notes.trim() }]
       : [])
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    .sort((a, b) => new Date(b.task.updatedAt || b.task.createdAt).getTime() - new Date(a.task.updatedAt || a.task.createdAt).getTime());
 
   return (
     <section className="panel notes-panel" aria-labelledby="notes-title">
       <div className="section-heading notes-heading">
-        <div><span className="insight-eyebrow">KNOWLEDGE BASE</span><h2 id="notes-title">Notes from your planner</h2><p>Notes attached to real Notion planner items.</p></div>
+        <div><span className="insight-eyebrow">KNOWLEDGE BASE</span><h2 id="notes-title">Notes from your planner</h2><p>Note text is stored on its planner item; dates below refer to that item, not a separate note timestamp.</p></div>
         <span className="notes-count">{notes.length} note{notes.length === 1 ? "" : "s"}</span>
       </div>
       {notes.length > 0 ? <div className="notes-grid">
-        {notes.map(({ task, note, timestamp }) => (
+        {notes.map(({ task, note }) => (
           <article className="note-card" key={task.id}>
-            <div className="note-card-meta"><span>{task.area || task.type}</span><time dateTime={Number.isNaN(new Date(timestamp).getTime()) ? undefined : timestamp}>
-              {Number.isNaN(new Date(timestamp).getTime()) ? "Date unavailable" : formatDate(timestamp)}</time></div>
+            <div className="note-card-meta"><span>{task.area || task.type}</span></div>
             <h3>{task.title}</h3>
-            <p>{note}</p>
+            <div className="note-dates">
+              <span>Item created <time dateTime={validTimestamp(task.createdAt) ? task.createdAt : undefined}>{noteTimestamp(task.createdAt)}</time></span>
+              <span>Item updated <time dateTime={validTimestamp(task.updatedAt || task.createdAt) ? task.updatedAt || task.createdAt : undefined}>{noteTimestamp(task.updatedAt || task.createdAt)}</time></span>
+            </div>
+            <div className="note-content"><strong>Note content</strong><p>{note}</p></div>
             <a href={task.url} target="_blank" rel="noreferrer">Open planner item <ExternalLink size={12} /></a>
           </article>
         ))}
@@ -323,13 +329,13 @@ function TaskDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const result = await response.json() as TaskMutationResponse;
+      const result = await readApiResponse<TaskMutationResponse>(response);
       if (!response.ok || !result.ok || !result.task) {
         throw new Error(result.error ?? "Could not create the planner item.");
       }
       onSaved(result.task);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Could not create the planner item.");
+      setError(apiErrorMessage(submitError, "Could not create the planner item."));
     } finally {
       setSaving(false);
     }
@@ -700,6 +706,7 @@ export default function DashboardPage() {
   const [lastUpdated, setLastUpdated] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
+  const [requestDayPlan, setRequestDayPlan] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" | "info" } | null>(null);
   const [archiveTask, setArchiveTask] = useState<Task | null>(null);
   const [taskOptions, setTaskOptions] = useState<TaskOptions | null>(null);
@@ -747,7 +754,7 @@ export default function DashboardPage() {
     setError("");
     try {
       const response = await fetch("/api/tasks", { cache: "no-store" });
-      const result = await response.json() as TasksResponse;
+      const result = await readApiResponse<TasksResponse>(response);
       if (!response.ok || !result.configured) throw new Error(result.error ?? "Could not load your Notion database.");
       setTasks(result.tasks);
       setTaskOptions(result.options ?? null);
@@ -757,7 +764,7 @@ export default function DashboardPage() {
     } catch (loadError) {
       setTasks([]);
       setState("error");
-      const message = loadError instanceof Error ? loadError.message : "Could not load your Notion database.";
+      const message = apiErrorMessage(loadError, "Could not load your Notion database.");
       setError(message);
       if (showToast) notify(message, "error");
     }
@@ -768,14 +775,14 @@ export default function DashboardPage() {
     setGoogleError("");
     try {
       const response = await fetch("/api/google/summary", { cache: "no-store" });
-      const result = await response.json() as GoogleWorkspaceSummary & { error?: string };
+      const result = await readApiResponse<GoogleWorkspaceSummary & { error?: string }>(response);
       if (response.status === 401) setGoogleSummary(emptyGoogleSummary);
       if (!response.ok) throw new Error(result.error ?? "Google session expired. Reconnect your Google account.");
       setGoogleSummary(result);
       if (result.error) setGoogleError(result.error);
       else if (showToast) notify("Google Workspace data refreshed.");
     } catch (loadError) {
-      const message = loadError instanceof Error ? loadError.message : "Could not load Google Workspace.";
+      const message = apiErrorMessage(loadError, "Could not load Google Workspace.");
       setGoogleError(message);
       if (showToast) notify(message, "error");
     } finally {
@@ -827,13 +834,14 @@ export default function DashboardPage() {
   }
 
   const clearTaskToBreakDown = useCallback(() => setTaskToBreakDown(null), []);
+  const clearDayPlanRequest = useCallback(() => setRequestDayPlan(false), []);
 
   async function handleTaskDelete(task: Task) {
     setDeletingTaskId(task.id);
     setActionError("");
     try {
       const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "DELETE" });
-      const result = await response.json() as { ok: boolean; error?: string };
+      const result = await readApiResponse<{ ok: boolean; error?: string }>(response);
       if (!response.ok || !result.ok) throw new Error(result.error ?? "Could not archive the planner item.");
       setTasks((current) => current.filter((item) => item.id !== task.id));
       setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
@@ -841,7 +849,7 @@ export default function DashboardPage() {
       setSuccessMessage(message);
       notify(message);
     } catch (deleteError) {
-      const message = deleteError instanceof Error ? deleteError.message : "Could not archive the planner item.";
+      const message = apiErrorMessage(deleteError, "Could not archive the planner item.");
       setActionError(message);
       notify(message, "error");
     } finally {
@@ -871,7 +879,7 @@ export default function DashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ completed: !task.completed }),
       });
-      const result = await response.json() as TaskMutationResponse;
+      const result = await readApiResponse<TaskMutationResponse>(response);
       if (!response.ok || !result.ok || !result.task) {
         throw new Error(result.error ?? "Could not update task completion.");
       }
@@ -880,7 +888,7 @@ export default function DashboardPage() {
       setSuccessMessage(`“${task.title}” marked ${result.task.completed ? "complete" : "not complete"}.`);
       notify(`“${task.title}” marked ${result.task.completed ? "complete" : "not complete"}.`);
     } catch (completeError) {
-      const message = completeError instanceof Error ? completeError.message : "Could not update task completion.";
+      const message = apiErrorMessage(completeError, "Could not update task completion.");
       setActionError(message);
       notify(message, "error");
     } finally {
@@ -892,12 +900,12 @@ export default function DashboardPage() {
     setGoogleError("");
     try {
       const response = await fetch("/api/google/disconnect", { method: "POST" });
-      const result = await response.json() as { error?: string };
+      const result = await readApiResponse<{ error?: string }>(response);
       if (!response.ok) throw new Error(result.error ?? "Could not disconnect Google.");
       setGoogleSummary(emptyGoogleSummary);
       notify("Google Workspace disconnected and access revoked.");
     } catch (disconnectError) {
-      const message = disconnectError instanceof Error ? disconnectError.message : "Could not disconnect Google.";
+      const message = apiErrorMessage(disconnectError, "Could not disconnect Google.");
       setGoogleError(message);
       notify(message, "error");
     }
@@ -1040,9 +1048,15 @@ export default function DashboardPage() {
             )}
             <div className="my-day-footer">
               <span>{myDayTaskCount} focus item{myDayTaskCount === 1 ? "" : "s"}{myDayTaskCount > myDayTasks.length ? ` · showing top ${myDayTasks.length}` : ""}{tasks.some((task) => isOverdue(task, today)) ? ` · ${tasks.filter((task) => isOverdue(task, today)).length} overdue` : ""}</span>
-              <button type="button" onClick={() => { selectTab("planner-assistant"); window.setTimeout(() => document.getElementById("planner-assistant")?.scrollIntoView({ behavior: "smooth" }), 0); }}>Plan my day with AI <Sparkles size={12} /></button>
+              <button type="button" disabled={state !== "ready"} onClick={() => {
+                setRequestDayPlan(true);
+                selectTab("planner-assistant");
+                window.setTimeout(() => document.getElementById("planner-assistant")?.scrollIntoView({ behavior: "smooth" }), 0);
+              }}>Plan my day with AI <Sparkles size={12} /></button>
             </div>
           </section>
+
+          <NextBestActionPanel disabled={state !== "ready"} />
 
           <section className="panel google-workspace-panel" aria-labelledby="google-workspace-title">
             <div className="panel-heading google-workspace-heading">
@@ -1116,7 +1130,7 @@ export default function DashboardPage() {
           <div className={`tab-content${activeTab === "planner-assistant" ? " is-active" : ""}`} id="ai-assistant-tab" role="tabpanel" aria-labelledby="nav-planner-assistant" aria-hidden={activeTab !== "planner-assistant"}>
           <PlannerAssistant disabled={state !== "ready"} tasks={tasks} options={taskOptions} googleConnected={googleSummary.connected}
             taskToBreakDown={taskToBreakDown} onBreakdownHandled={clearTaskToBreakDown}
-            onTaskSaved={handleAssistantTaskSaved} />
+            onTaskSaved={handleAssistantTaskSaved} startDayPlan={requestDayPlan} onDayPlanStarted={clearDayPlanRequest} />
           </div>
 
           <div className={`tab-content${activeTab === "calendar" ? " is-active" : ""}`} id="calendar-tab" role="tabpanel" aria-labelledby="nav-calendar" aria-hidden={activeTab !== "calendar"}>

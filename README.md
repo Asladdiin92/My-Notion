@@ -62,6 +62,7 @@ Next.js middleware + API access check (allowlisted verified email)
         │ PATCH /api/tasks/:id      edit a planner item
         │ DELETE /api/tasks/:id     archive a planner item
         │ POST /api/assistant      planner, research, writing, translation, file tools
+        │ POST /api/assistant/next-action on-demand ranked next-task explanation
         │ GET /api/google/summary   Gmail, Calendar, and Drive snapshot
         │ POST /api/google/assistant on-demand task and Google data analysis
         ▼
@@ -240,16 +241,25 @@ Done/Planned status to Notion.
   metadata such as notes, instructors, recurrence, and links.
 - **Search and refresh:** task search filters the currently loaded tasks in the
   browser. **Refresh** makes fresh requests to the API and Notion.
+- **Next best action:** Home ranks incomplete Notion items by overdue/due
+  status, priority, and whether their recorded estimate fits before the next
+  available focus window. The default focus window is 08:30–18:00 in
+  `Africa/Addis_Ababa`. When Google is connected, the on-demand request checks
+  upcoming Calendar events and avoids those meeting intervals. Select
+  **Recommend my next action** to send only the selected task and focus-window
+  context to Gemini for a brief explanation and first step. This does not run
+  in the background or change Notion; estimates are shown only when recorded.
 
 ## Project structure
 
 ```text
 notion-dashboard/
 ├── app/
-│   ├── api/assistant/       # Server-side Gemini planner assistant
+│   ├── api/assistant/       # Server-side Gemini assistant and next-action route
 │   ├── api/google/         # Google OAuth, workspace snapshot, and AI secretary
 │   ├── api/tasks/route.ts   # GET task data/options and POST new items
 │   ├── sign-in/             # Clerk sign-in page
+│   ├── error.tsx            # Route-level recovery screen
 │   ├── global-error.tsx     # Friendly recovery screen for unexpected errors
 │   ├── globals.css          # Dashboard styles and responsive breakpoints
 │   ├── layout.tsx           # Shared page layout and browser metadata
@@ -259,11 +269,13 @@ notion-dashboard/
 │   └── planner-assistant.tsx # AI suggestions, task Q&A, and confirmed edits
 ├── lib/
 │   ├── access.ts            # Verified-email allowlist check
+│   ├── api-response.ts      # Consistent, safe browser API response parsing
 │   ├── google-types.ts      # Google Workspace snapshot types
 │   ├── google-workspace.ts  # OAuth session encryption and Google API calls
 │   ├── gemini.test.ts       # Gemini fallback behavior tests
 │   ├── gemini.ts            # Server-side Gemini API requests
 │   ├── notion.ts            # Notion API requests, validation, and mapping
+│   ├── next-action.ts       # Time-window and meeting-aware task ranking
 │   ├── prayer-times.test.ts # Prayer-time lookup and timezone tests
 │   ├── prayer-times.ts      # Harar prayer-time lookup and timezone conversion
 │   └── types.ts             # Shared Task and API data types
@@ -366,6 +378,19 @@ The Overview's **My Day** section highlights unfinished items due today,
 overdue items, and tasks whose recurrence explicitly says daily/every day.
 It prioritizes Critical/High work and provides quick complete/edit actions;
 the AI planner remains responsible for suggesting a full time-blocked plan.
+
+Home's **Next best action** is separate from that list and runs only when
+requested. It chooses one real incomplete planner item, explains the ranking
+with Gemini, and suggests a concrete first step. Its focus window uses the
+default 08:30–18:00 Addis Ababa workday; outside that window it recommends the
+next available work window. If Google Calendar is not connected, it clearly
+warns that meeting conflicts could not be checked. The assistant cannot update
+the task; use the normal task controls if you decide to make a change.
+
+Notes are stored in the Notion planner item's Notes field, which has no
+separate note-created or note-updated timestamp in this schema. The Notes view
+therefore displays the parent item's creation and last-edited dates separately
+from the note content rather than presenting either as a precise note date.
 
 The assistant can also interpret instructions such as “add a biology review
 task tomorrow” or “move my biology deadline to Friday.” For create/edit

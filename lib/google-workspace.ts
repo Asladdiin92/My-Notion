@@ -309,3 +309,40 @@ export async function fetchGoogleWorkspaceSummary(
     })),
   };
 }
+
+export async function fetchGoogleCalendarEvents(
+  session: GoogleSession,
+  start = new Date(),
+  days = 8,
+): Promise<Array<{ id: string; title: string; start: string; end: string; link?: string }>> {
+  const events: Array<{ id: string; summary?: string; start?: { dateTime?: string; date?: string }; end?: { dateTime?: string; date?: string }; htmlLink?: string }> = [];
+  let pageToken: string | undefined;
+  do {
+    const calendarUrl = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
+    calendarUrl.searchParams.set("timeMin", start.toISOString());
+    calendarUrl.searchParams.set("timeMax", new Date(start.getTime() + days * 86_400_000).toISOString());
+    calendarUrl.searchParams.set("singleEvents", "true");
+    calendarUrl.searchParams.set("orderBy", "startTime");
+    calendarUrl.searchParams.set("maxResults", "250");
+    calendarUrl.searchParams.set("fields", "items(id,summary,start,end,htmlLink),nextPageToken");
+    if (pageToken) calendarUrl.searchParams.set("pageToken", pageToken);
+
+    const calendarResult = await googleGet<{
+      items?: typeof events;
+      nextPageToken?: string;
+    }>(session.accessToken, calendarUrl);
+    events.push(...(calendarResult.items ?? []));
+    pageToken = calendarResult.nextPageToken;
+    if (pageToken && events.length >= 1000) {
+      throw new Error("There are too many upcoming calendar events to check safely. Narrow your calendar or try again.");
+    }
+  } while (pageToken);
+
+  return events.map((event) => ({
+    id: event.id,
+    title: event.summary || "(untitled event)",
+    start: event.start?.dateTime ?? event.start?.date ?? "",
+    end: event.end?.dateTime ?? event.end?.date ?? "",
+    link: event.htmlLink,
+  }));
+}

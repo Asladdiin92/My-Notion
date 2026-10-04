@@ -12,6 +12,7 @@ import type {
   ScheduleBlock,
 } from "@/lib/gemini";
 import type { Task, TaskOptions } from "@/lib/types";
+import { apiErrorMessage, readApiResponse } from "@/lib/api-response";
 import {
   formatPlannerDate,
   plannerLocalTimeToIso,
@@ -106,6 +107,8 @@ export function PlannerAssistant({
   taskToBreakDown,
   onBreakdownHandled,
   onTaskSaved,
+  startDayPlan,
+  onDayPlanStarted,
 }: {
   disabled: boolean;
   tasks: Task[];
@@ -114,6 +117,8 @@ export function PlannerAssistant({
   taskToBreakDown: Task | null;
   onBreakdownHandled: () => void;
   onTaskSaved: (task: Task) => void;
+  startDayPlan: boolean;
+  onDayPlanStarted: () => void;
 }) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
@@ -188,7 +193,7 @@ export function PlannerAssistant({
         ...(!useUpload ? { headers: { "Content-Type": "application/json" } } : {}),
         body,
       });
-      const result = await response.json() as AssistantResponse;
+      const result = await readApiResponse<AssistantResponse>(response);
       if (!response.ok) throw new Error(result.error ?? "The planner assistant could not respond.");
       if (mode === "research") {
         if (!result.answer) throw new Error("The research assistant returned no answer.");
@@ -230,7 +235,7 @@ export function PlannerAssistant({
         setAnswer(result.answer);
       }
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "The planner assistant could not respond.");
+      setError(apiErrorMessage(requestError, "The planner assistant could not respond."));
     } finally {
       setLoading(false);
     }
@@ -260,6 +265,18 @@ export function PlannerAssistant({
       void ask("ask", "Give me one high-impact, encouraging sentence and tell me which specific task to start right now.");
     }
   }
+
+  useEffect(() => {
+    if (!startDayPlan || disabled || loading) return;
+    if (pendingChange || plannedTasks.length > 0) {
+      setError("Review or save the current assistant proposal before creating a day plan.");
+      onDayPlanStarted();
+      return;
+    }
+    setAssistantMode("day");
+    void ask("day");
+    onDayPlanStarted();
+  }, [ask, disabled, loading, onDayPlanStarted, pendingChange, plannedTasks.length, startDayPlan]);
 
   function scheduleTask(block: ScheduleBlock, plan: DayPlan, allTasks: Task[], taskOptions: TaskOptions | null): PlannedTask {
     const linkedTask = allTasks.find((task) => task.id === block.taskId);
@@ -349,7 +366,7 @@ export function PlannerAssistant({
               ...(fields.recurrence !== undefined ? { recurrence: fields.recurrence } : {}),
             }),
           });
-          const result = await response.json() as TaskMutationResponse;
+          const result = await readApiResponse<TaskMutationResponse>(response);
           if (!response.ok || !result.ok || !result.task) {
             throw new Error(`Updated ${saved} of ${targets.length} tasks before an error: ${result.error ?? "Could not update the next task."}`);
           }
@@ -384,7 +401,7 @@ export function PlannerAssistant({
           body: JSON.stringify(body),
         },
       );
-      const result = await response.json() as TaskMutationResponse;
+      const result = await readApiResponse<TaskMutationResponse>(response);
       if (!response.ok || !result.ok || !result.task) {
         throw new Error(result.error ?? "Could not save the planner change.");
       }
@@ -395,7 +412,7 @@ export function PlannerAssistant({
         ? `Created “${result.task.title}” in your Notion planner.`
         : `Updated “${result.task.title}” in your Notion planner.`);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Could not save the planner change.");
+      setError(apiErrorMessage(saveError, "Could not save the planner change."));
     } finally {
       setLoading(false);
     }
@@ -429,7 +446,7 @@ export function PlannerAssistant({
             deliverable: item.deliverable,
           }),
         });
-        const result = await response.json() as TaskMutationResponse;
+        const result = await readApiResponse<TaskMutationResponse>(response);
         if (!response.ok || !result.ok || !result.task) {
           throw new Error(`Saved ${saved} of ${selected.length} tasks before an error: ${result.error ?? "Could not save the next task."}`);
         }
@@ -443,7 +460,7 @@ export function PlannerAssistant({
       setDatabaseDraft(null);
       setPlannedTasks([]);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Could not save the selected tasks.");
+      setError(apiErrorMessage(saveError, "Could not save the selected tasks."));
     } finally {
       setLoading(false);
     }
