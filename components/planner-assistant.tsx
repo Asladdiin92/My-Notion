@@ -146,6 +146,11 @@ export function PlannerAssistant({
     setDayPlan(null);
     setDatabaseDraft(null);
     setPlannedTasks([]);
+    // Clear stale file reference when switching to a mode that doesn't use uploads,
+    // so a previously selected file never silently persists into a new request.
+    if (mode !== "analyze" && mode !== "autofill") {
+      setSelectedFile(null);
+    }
     try {
       const timezone = PLANNER_TIME_ZONE;
       const date = mode === "day" ? planningDate : todayInPlannerTimeZone();
@@ -240,26 +245,36 @@ export function PlannerAssistant({
 
   function runQuickAction(action: typeof quickActions[number]["id"]) {
     if (action === "day") {
+      setAssistantMode("day");
       void ask("day");
     } else if (action === "breakdown") {
+      setAssistantMode("breakdown");
       void ask("breakdown", "Choose the hardest pending University or Coding Lab task and split it into 3–4 practical steps.");
     } else if (action === "urgent") {
+      setAssistantMode("ask");
       void ask("ask", "What are the top two things in my planner that could cause problems if I don't finish them in the next three hours? Be concise and tell me the next physical action for each.");
     } else {
+      setAssistantMode("ask");
       void ask("ask", "Give me one high-impact, encouraging sentence and tell me which specific task to start right now.");
     }
   }
 
   function scheduleTask(block: ScheduleBlock, plan: DayPlan, allTasks: Task[], taskOptions: TaskOptions | null): PlannedTask {
     const linkedTask = allTasks.find((task) => task.id === block.taskId);
-    const makeChoice = (existing: string | undefined, available: string[], preferred: string) =>
-      existing && available.includes(existing) ? existing : available.includes(preferred) ? preferred : available[0];
+    // Return the value only if it exists in the available options list.
+    // Never silently fall back to available[0] — that would tag the task
+    // with a random Notion option the user didn't choose.
+    const safeChoice = (existing: string | undefined, available: string[], preferred: string): string | undefined => {
+      if (existing && available.includes(existing)) return existing;
+      if (available.includes(preferred)) return preferred;
+      return undefined; // leave unset rather than picking a wrong default
+    };
     return {
       title: `${block.startTime}–${block.endTime} · ${block.title}`,
       area: taskOptions?.areas.includes(block.area) ? block.area : linkedTask?.area || undefined,
       priority: linkedTask?.priority || undefined,
-      type: makeChoice(linkedTask?.type, taskOptions?.types ?? [], "Task"),
-      status: makeChoice(linkedTask?.status, taskOptions?.statuses ?? [], "Planned"),
+      type: safeChoice(linkedTask?.type, taskOptions?.types ?? [], "Task"),
+      status: safeChoice(linkedTask?.status, taskOptions?.statuses ?? [], "Planned"),
       course: linkedTask?.course || undefined,
       nextAction: `Scheduled ${block.startTime}–${block.endTime} (${plan.timezone}). ${block.nextAction}`,
       dueDate: plannerLocalTimeToIso(plan.date, block.startTime),
@@ -271,6 +286,20 @@ export function PlannerAssistant({
     setPlannedTasks((current) => current.map((item, itemIndex) =>
       itemIndex === index ? { ...item, checked } : item,
     ));
+  }
+
+  /**
+   * Converts a planner-timezone "YYYY-MM-DDTHH:mm" string to a proper ISO timestamp.
+   * Date-only strings (YYYY-MM-DD) and undefined/null are passed through unchanged.
+   * Extracted here to avoid the identical regex+conversion being duplicated in
+   * confirmChange (single), confirmChange (bulk_update), and saveSelectedTasks.
+   */
+  function toIsoDate(value: string | null | undefined): string | null | undefined {
+    if (!value) return value;
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) {
+      return plannerLocalTimeToIso(value.slice(0, 10), value.slice(11, 16));
+    }
+    return value;
   }
 
   useEffect(() => {
@@ -301,9 +330,7 @@ export function PlannerAssistant({
         let saved = 0;
         for (const target of targets) {
           const targetTask = target!;
-          const dueDate = fields.dueDate && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(fields.dueDate)
-            ? plannerLocalTimeToIso(fields.dueDate.slice(0, 10), fields.dueDate.slice(11, 16))
-            : fields.dueDate;
+          const dueDate = toIsoDate(fields.dueDate);
           const response = await fetch(`/api/tasks/${encodeURIComponent(targetTask.id)}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -332,9 +359,7 @@ export function PlannerAssistant({
         setAnswer(`Updated ${saved} tasks in your Notion planner.`);
         return;
       }
-      const dueDate = fields.dueDate && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(fields.dueDate)
-        ? plannerLocalTimeToIso(fields.dueDate.slice(0, 10), fields.dueDate.slice(11, 16))
-        : fields.dueDate;
+      const dueDate = toIsoDate(fields.dueDate);
       const body = pendingChange.action === "create"
         ? { ...fields, dueDate }
         : {
@@ -392,9 +417,7 @@ export function PlannerAssistant({
             priority: item.priority,
             area: item.area,
             course: item.course,
-            dueDate: item.dueDate && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(item.dueDate)
-              ? plannerLocalTimeToIso(item.dueDate.slice(0, 10), item.dueDate.slice(11, 16))
-              : item.dueDate,
+            dueDate: toIsoDate(item.dueDate),
             nextAction: item.nextAction,
             courseCode: item.courseCode,
             estimatedHours: item.estimatedHours,

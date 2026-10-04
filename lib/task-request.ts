@@ -60,6 +60,24 @@ export async function parseTaskInput(request: Request) {
     if (values.title.length > 2000) {
       return { ok: false as const, error: "Title must be 2,000 characters or fewer." };
     }
+    // Validate date format for dueDate, dateEnd, and nextReviewDate.
+    // Without this, a malformed date string passes all string checks and reaches
+    // the Notion API, which returns an opaque 400 instead of a clean validation error.
+    for (const name of ["dueDate", "dateEnd", "nextReviewDate"] as const) {
+      const v = values[name];
+      if (typeof v !== "string" || !v) continue;
+      const datePart = v.slice(0, 10);
+      const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(v);
+      const isDateTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.test(v);
+      const isLocalDateTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v);
+      if (!isDateOnly && !isDateTime && !isLocalDateTime) {
+        return { ok: false as const, error: `${name} must be a date in YYYY-MM-DD or ISO 8601 format.` };
+      }
+      const parsed = new Date(`${datePart}T00:00:00.000Z`);
+      if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== datePart) {
+        return { ok: false as const, error: `${name} is not a valid calendar date.` };
+      }
+    }
     const input: CreateTaskInput = {
       title: values.title,
       type: values.type as string | undefined,

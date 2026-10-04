@@ -6,7 +6,9 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   BookOpen,
+  BriefcaseBusiness,
   CalendarDays,
+  CalendarClock,
   Check,
   CheckCheck,
   ChevronLeft,
@@ -22,6 +24,7 @@ import {
   LoaderCircle,
   LucideIcon,
   Menu,
+  Mail,
   Pencil,
   Plus,
   RefreshCw,
@@ -126,30 +129,38 @@ function getMyDayTasks(tasks: Task[], today: string): Task[] {
 }
 
 function Sidebar({ onClose }: { onClose?: () => void }) {
+  const [activeTarget, setActiveTarget] = useState("overview");
+  useEffect(() => {
+    const syncActiveTarget = () => setActiveTarget(window.location.hash.slice(1) || "overview");
+    syncActiveTarget();
+    window.addEventListener("hashchange", syncActiveTarget);
+    return () => window.removeEventListener("hashchange", syncActiveTarget);
+  }, []);
+
   const navigation = [
-    { label: "Overview", icon: LayoutDashboard, target: "overview" },
-    { label: "My Day", icon: CalendarDays, target: "my-day" },
-    { label: "My tasks", icon: ListChecks, target: "tasks" },
+    { label: "Home", icon: LayoutDashboard, target: "overview" },
+    { label: "Tasks", icon: ListChecks, target: "tasks" },
+    { label: "Projects", icon: BriefcaseBusiness, target: "projects" },
+    { label: "Notes", icon: BookOpen, target: "notes" },
     { label: "Calendar", icon: CalendarDays, target: "calendar" },
-    { label: "Progress", icon: Target, target: "progress" },
-    { label: "AI planner", icon: Sparkles, target: "planner-assistant" },
+    { label: "Analytics", icon: Target, target: "progress" },
+    { label: "AI Assistant", icon: Sparkles, target: "planner-assistant" },
   ];
   return (
     <aside className="sidebar">
       <a className="brand" href="#overview" onClick={onClose}>
-        <span className="brand-mark">n</span>
-        <span className="brand-copy"><strong>My Workspace</strong><small>Academic &amp; life planner</small></span>
+        <span className="brand-mark">A</span>
+        <span className="brand-copy"><strong>Asladin AI</strong><small>Command center</small></span>
       </a>
       <div className="sidebar-label">WORKSPACE</div>
       <nav className="sidebar-nav" aria-label="Main navigation">
-        {navigation.map(({ label, icon: Icon, target }, index) => (
-          <a className={`nav-link${index === 0 ? " active" : ""}`} href={`#${target}`} onClick={onClose} key={label}>
+        {navigation.map(({ label, icon: Icon, target }) => (
+          <a className={`nav-link${activeTarget === target ? " active" : ""}`} aria-current={activeTarget === target ? "page" : undefined} href={`#${target}`} onClick={onClose} key={label}>
             <Icon size={16} strokeWidth={1.8} /><span>{label}</span>
-            {label === "My tasks" && <span className="nav-badge">↗</span>}
           </a>
         ))}
       </nav>
-      <div className="sidebar-label projects-label">YOUR DATABASE</div>
+      <div className="sidebar-label projects-label">CONNECTED WORKSPACE</div>
       <div className="database-link"><span className="database-icon"><BookOpen size={14} /></span><span>Academic &amp; Life Planner</span></div>
       <div className="sidebar-bottom">
         <div className="notion-status"><span className="status-indicator" /><span>Powered by your Notion database</span></div>
@@ -773,7 +784,6 @@ export default function DashboardPage() {
   const courseWorkloadHours = tasks.filter((task) => !task.completed)
     .reduce((sum, task) => sum + (task.estimatedHours ?? 0), 0);
   const greeting = new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric", timeZone: PLANNER_TIME_ZONE }).format(new Date());
-  const hourInPlannerTimeZone = Number(new Intl.DateTimeFormat("en", { hour: "numeric", hourCycle: "h23", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
 
   if (!isLoaded) {
     return <main className="auth-page"><LoaderCircle size={20} className="spin" /><span>Checking your access…</span></main>;
@@ -806,8 +816,8 @@ export default function DashboardPage() {
         </header>
 
         <div className="page-wrap">
-          <section className="welcome-row">
-            <div><div className="date-line"><CalendarDays size={13} />{greeting}</div><h1>{hourInPlannerTimeZone < 12 ? "Good morning" : hourInPlannerTimeZone < 18 ? "Good afternoon" : "Good evening"}, Asladin <span aria-hidden="true">✳</span></h1><p>Your academic and life planner, at a glance.</p></div>
+          <section className="welcome-row command-center-banner">
+            <div><div className="date-line"><CalendarDays size={13} />{greeting}</div><h1>ASLADIN AI COMMAND CENTER</h1><p>Your workspace for tasks, projects, and a more focused day.</p></div>
             <a className="open-notion-button" href="https://www.notion.so" target="_blank" rel="noreferrer">Open Notion <ExternalLink size={13} /></a>
           </section>
 
@@ -847,10 +857,10 @@ export default function DashboardPage() {
           {actionError && <div className="connection-banner" role="alert"><span className="banner-icon"><AlertTriangle size={16} /></span><div><strong>Could not update the planner</strong><p>{actionError}</p></div><button onClick={() => setActionError("")}>Dismiss</button></div>}
 
           <section className="metrics-grid" aria-label="Task overview">
-            <MetricCard label="Total tasks" value={state === "loading" && tasks.length === 0 ? "—" : tasks.length} note="Across your planner" icon={ListChecks} tone="tone-green" />
-            <MetricCard label="Completed" value={metrics.completed} note={`${metrics.completion}% completion`} icon={CheckCheck} tone="tone-sage" trend="up" />
-            <MetricCard label="Pending" value={metrics.pending} note="Still on your list" icon={Clock3} tone="tone-violet" />
-            <MetricCard label="Overdue" value={metrics.overdue} note={metrics.overdue ? "Needs your attention" : "You’re all caught up"} icon={Flame} tone={metrics.overdue ? "tone-red" : "tone-amber"} trend={metrics.overdue ? "down" : undefined} />
+            <MetricCard label="Tasks Today" value={5} note="Ready for today" icon={ListChecks} tone="tone-green" />
+            <MetricCard label="Unread Emails" value={12} note="Across your inbox" icon={Mail} tone="tone-blue" />
+            <MetricCard label="Meetings" value={2} note="On your calendar" icon={CalendarClock} tone="tone-violet" />
+            <MetricCard label="Projects" value={4} note="Currently active" icon={BriefcaseBusiness} tone="tone-amber" />
           </section>
 
           <div className="section-heading" id="progress"><div><h2>Your progress</h2><p>See where your time and attention are going</p></div><span className="live-label"><i /> All insights from your database</span></div>
@@ -887,7 +897,7 @@ export default function DashboardPage() {
 
           <div className="content-grid">
             <CalendarCard tasks={tasks} options={taskOptions} />
-            <section className="panel areas-panel">
+            <section className="panel areas-panel" id="projects">
               <div className="panel-heading"><div><h2>Progress by area</h2><p>Completion across your focus areas</p></div><Target size={16} className="panel-title-icon" /></div>
               <div className="area-list">
                 {areaData.map((area, index) => (
@@ -915,6 +925,7 @@ export default function DashboardPage() {
             </section>
           </div>
 
+          <span className="section-anchor" id="notes" aria-hidden="true" />
           <TaskTable tasks={tasks} options={taskOptions} loading={state === "loading"} search={search} onSearch={setSearch}
             onCreate={() => { setEditingTask(null); setCreateDialogOpen(true); }}
             onEdit={(task) => { setCreateDialogOpen(false); setEditingTask(task); }}

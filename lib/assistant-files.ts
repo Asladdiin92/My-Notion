@@ -110,7 +110,15 @@ function decodeText(bytes: Buffer): string {
 
 async function extractSpreadsheetText(bytes: Buffer): Promise<string> {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(bytes);
+  // Guard against pathologically crafted XLSX files that have valid archive
+  // structure but extremely complex cell references, which could hang indefinitely.
+  // Race the load against a 10-second timeout to keep the serverless function safe.
+  await Promise.race([
+    workbook.xlsx.load(bytes),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("The spreadsheet took too long to process. Try a smaller file.")), 10_000),
+    ),
+  ]);
   const output: string[] = [];
   for (const sheet of workbook.worksheets.slice(0, 8)) {
     output.push(`Sheet: ${sheet.name}`);
