@@ -3,12 +3,8 @@
 import { useUser, UserButton } from "@clerk/nextjs";
 import {
   AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
   BookOpen,
-  BriefcaseBusiness,
   CalendarDays,
-  CalendarClock,
   Check,
   CheckCheck,
   ChevronLeft,
@@ -25,7 +21,6 @@ import {
   LoaderCircle,
   LucideIcon,
   Menu,
-  Mail,
   Pencil,
   Plus,
   RefreshCw,
@@ -47,6 +42,7 @@ import {
 import { PlannerAssistant } from "@/components/planner-assistant";
 import { AIRecommendationsPanel, NextBestActionPanel } from "@/components/dashboard-insights";
 import { RecentActivityTimeline } from "@/components/recent-activity-timeline";
+import { MetricsGrid } from "@/components/dashboard-metrics";
 import { ProviderIntegrations } from "@/components/provider-integrations";
 import type { Task, TaskOptions, TasksResponse } from "@/lib/types";
 import type { GoogleWorkspaceSummary } from "@/lib/google-types";
@@ -206,30 +202,6 @@ function Sidebar({
         <div className="profile-row"><span className="profile-avatar">A</span><span><strong>Asladin</strong><small>Personal workspace</small></span><Sparkles size={15} className="profile-sparkle" /></div>
       </div>
     </aside>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  note,
-  icon: Icon,
-  tone,
-  trend,
-}: {
-  label: string;
-  value: number | string;
-  note: string;
-  icon: LucideIcon;
-  tone: string;
-  trend?: "up" | "down";
-}) {
-  return (
-    <article className="metric-card">
-      <div className="metric-head"><span>{label}</span><span className={`metric-icon ${tone}`}><Icon size={16} strokeWidth={1.9} /></span></div>
-      <div className="metric-value-row"><strong className="metric-value">{value}</strong>{trend && <span className="metric-trend">{trend === "up" ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}{note}</span>}</div>
-      {!trend && <div className="metric-note">{note}</div>}
-    </article>
   );
 }
 
@@ -1106,12 +1078,13 @@ export default function DashboardPage() {
           {successMessage && <div className="success-banner" role="status"><Check size={15} /><span>{successMessage}</span><button onClick={() => setSuccessMessage("")} aria-label="Dismiss">×</button></div>}
           {actionError && <div className="connection-banner" role="alert"><span className="banner-icon"><AlertTriangle size={16} /></span><div><strong>Could not update the planner</strong><p>{actionError}</p></div><button onClick={() => setActionError("")}>Dismiss</button></div>}
 
-          <section className="metrics-grid" aria-label="Task overview">
-            <MetricCard label="Tasks Today" value={state === "ready" ? myDayTaskCount : "—"} note="Due, recurring, or overdue" icon={ListChecks} tone="tone-green" />
-            <MetricCard label="Unread Emails" value={googleSummary.connected ? googleSummary.unreadEmails : "—"} note={googleSummary.connected ? "In your Gmail inbox" : "Connect Google to view"} icon={Mail} tone="tone-blue" />
-            <MetricCard label="Meetings" value={googleSummary.connected ? meetingsToday : "—"} note={googleSummary.connected ? "On your calendar today" : "Connect Google to view"} icon={CalendarClock} tone="tone-violet" />
-            <MetricCard label="Project Areas" value={state === "ready" ? areaData.length : "—"} note="Distinct Notion areas" icon={BriefcaseBusiness} tone="tone-amber" />
-          </section>
+          <MetricsGrid
+            tasks={tasks}
+            tasksReady={state === "ready"}
+            tasksError={state === "error" ? error : undefined}
+            refreshKey={dashboardRefreshKey}
+            timeZone={PLANNER_TIME_ZONE}
+          />
 
           <section className="dashboard-insights-grid" aria-label="Recent activity and AI recommendations">
             <RecentActivityTimeline
