@@ -1,7 +1,8 @@
 import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
-import { MongoClient, type Collection, type Db } from "mongodb";
+import type { Collection } from "mongodb";
+import { getMongoDb } from "@/lib/mongodb";
 
 type TelegramLink = {
   userId: string;
@@ -42,25 +43,7 @@ type IntegrationCollections = {
   githubPendingActions: Collection<GitHubPendingRecord>;
 };
 
-const DATABASE_NAME = process.env.MONGO_DATABASE_NAME || "asladin_command_center";
-const globalMongo = globalThis as typeof globalThis & { integrationMongo?: Promise<MongoClient> };
 let integrationCollections: Promise<IntegrationCollections> | undefined;
-
-async function database(): Promise<Db> {
-  const uri = process.env.MONGO_URI;
-  if (!uri) throw new Error("Set MONGO_URI to enable Telegram linking and external-action approvals.");
-  globalMongo.integrationMongo ??= new MongoClient(uri, {
-    serverSelectionTimeoutMS: 8000,
-    connectTimeoutMS: 8000,
-    maxPoolSize: 5,
-  }).connect().catch((error: unknown) => {
-    globalMongo.integrationMongo = undefined;
-    const errorName = error instanceof Error ? error.name : "UnknownError";
-    console.error("MongoDB integration connection failed:", errorName);
-    throw new Error("MongoDB integration storage is unavailable. Check MONGO_URI, Atlas network access, and database permissions.");
-  });
-  return (await globalMongo.integrationMongo).db(DATABASE_NAME);
-}
 
 async function collections(): Promise<IntegrationCollections> {
   if (integrationCollections) return integrationCollections;
@@ -69,7 +52,7 @@ async function collections(): Promise<IntegrationCollections> {
     return await integrationCollections;
   } catch (error) {
     integrationCollections = undefined;
-    if (error instanceof Error && error.message.startsWith("Set MONGO_URI")) throw error;
+    if (error instanceof Error && error.message.startsWith("MongoDB is not configured")) throw error;
     const errorName = error instanceof Error ? error.name : "UnknownError";
     console.error("MongoDB integration initialization failed:", errorName);
     throw new Error("MongoDB integration storage could not be initialized. Check the database permissions and indexes.");
@@ -77,7 +60,7 @@ async function collections(): Promise<IntegrationCollections> {
 }
 
 async function createCollections(): Promise<IntegrationCollections> {
-  const db = await database();
+  const db = await getMongoDb();
   const links = db.collection<TelegramLink>("telegram_links");
   const pairingCodes = db.collection<TelegramPairingCode>("telegram_pairing_codes");
   const pendingActions = db.collection<TelegramPendingRecord>("telegram_pending_actions");

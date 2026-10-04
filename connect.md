@@ -190,7 +190,7 @@ contents. The bot token and webhook secret are server-only.
    TELEGRAM_WEBHOOK_SECRET=use_letters_numbers_underscore_or_hyphen
    TELEGRAM_WEBHOOK_URL=https://your-domain.example/api/telegram/webhook
    MONGO_URI=mongodb+srv://...
-   MONGO_DATABASE_NAME=asladin_command_center
+   MONGO_DB_NAME=asladin_command_center
    ```
 
 3. For MongoDB Atlas, create a database user restricted to this database,
