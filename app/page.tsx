@@ -705,6 +705,7 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [requestDayPlan, setRequestDayPlan] = useState(false);
@@ -720,6 +721,7 @@ export default function DashboardPage() {
   const [taskToBreakDown, setTaskToBreakDown] = useState<Task | null>(null);
   const [googleSummary, setGoogleSummary] = useState<GoogleWorkspaceSummary>(emptyGoogleSummary);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [googleSummaryLoaded, setGoogleSummaryLoaded] = useState(false);
   const [googleError, setGoogleError] = useState("");
 
   const notify = useCallback((message: string, tone: "success" | "error" | "info" = "success") => {
@@ -762,6 +764,7 @@ export default function DashboardPage() {
       setState("ready");
       setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
       if (showToast) {
+        setDashboardRefreshKey((current) => current + 1);
         notify("Workspace data refreshed.");
         try {
           const response = await fetch("/api/telegram/notify", { method: "POST" });
@@ -797,6 +800,7 @@ export default function DashboardPage() {
       if (showToast) notify(message, "error");
     } finally {
       setGoogleLoading(false);
+      setGoogleSummaryLoaded(true);
     }
   }, [notify]);
 
@@ -1066,7 +1070,7 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          <NextBestActionPanel disabled={state !== "ready"} />
+          <NextBestActionPanel disabled={state !== "ready"} refreshKey={dashboardRefreshKey} />
 
           <section className="panel google-workspace-panel" aria-labelledby="google-workspace-title">
             <div className="panel-heading google-workspace-heading">
@@ -1105,7 +1109,12 @@ export default function DashboardPage() {
 
           <section className="dashboard-insights-grid" aria-label="Recent activity and AI recommendations">
             <RecentActivityPanel tasks={tasks} loading={state === "loading"} />
-            <AIRecommendationsPanel disabled={state !== "ready"} googleConnected={googleSummary.connected} onNotify={notify} />
+            <AIRecommendationsPanel
+              disabled={state !== "ready" || !googleSummaryLoaded}
+              googleConnected={googleSummary.connected}
+              refreshKey={dashboardRefreshKey}
+              onNotify={notify}
+            />
           </section>
           </div>
 

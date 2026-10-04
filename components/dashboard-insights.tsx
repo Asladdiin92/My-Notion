@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
   CalendarClock,
@@ -55,12 +55,17 @@ function focusWindowLabel(window: FocusWindow): string {
   return `${date}, ${window.startTime}–${window.endTime}`;
 }
 
-export function NextBestActionPanel({ disabled }: { disabled: boolean }) {
+export function NextBestActionPanel({ disabled, refreshKey }: { disabled: boolean; refreshKey: number }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<NextActionResponse | null>(null);
+  const requestController = useRef<AbortController | null>(null);
+  const lastAutomaticRequest = useRef<number | null>(null);
 
-  async function requestRecommendation() {
+  const requestRecommendation = useCallback(async () => {
+    requestController.current?.abort();
+    const controller = new AbortController();
+    requestController.current = controller;
     setLoading(true);
     setError("");
     setResult(null);
@@ -68,7 +73,7 @@ export function NextBestActionPanel({ disabled }: { disabled: boolean }) {
       const response = await fetch("/api/assistant/next-action", {
         method: "POST",
         cache: "no-store",
-        signal: AbortSignal.timeout(45_000),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(45_000)]),
       });
       const payload = await readApiResponse<NextActionResponse>(response);
       if (!response.ok) throw new Error(payload.error ?? "Could not get a next-action recommendation.");
@@ -77,11 +82,23 @@ export function NextBestActionPanel({ disabled }: { disabled: boolean }) {
       }
       setResult(payload);
     } catch (requestError) {
+      if (controller.signal.aborted) return;
       setError(apiErrorMessage(requestError, "Could not get a next-action recommendation."));
     } finally {
-      setLoading(false);
+      if (requestController.current === controller) {
+        requestController.current = null;
+        setLoading(false);
+      }
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (disabled || lastAutomaticRequest.current === refreshKey) return;
+    lastAutomaticRequest.current = refreshKey;
+    void requestRecommendation();
+  }, [disabled, refreshKey, requestRecommendation]);
+
+  useEffect(() => () => requestController.current?.abort(), []);
 
   const candidate: NextActionCandidate | null = result?.candidate ?? null;
   const dueDate = candidate?.dueDate;
@@ -100,7 +117,7 @@ export function NextBestActionPanel({ disabled }: { disabled: boolean }) {
       </div>
       {!result && !error && (
         <div className="next-action-intro">
-          <p>Nothing is sent to AI until you request a recommendation. Nothing is changed in Notion.</p>
+          <p>{loading ? "Checking your planner with AI…" : "AI checks your planner when this page opens and after each dashboard refresh. Nothing is changed in Notion."}</p>
           <button type="button" className="next-action-run" onClick={() => void requestRecommendation()} disabled={disabled || loading}>
             {loading ? <><LoaderCircle size={13} className="spin" /> Checking your planner…</> : <><Sparkles size={13} /> Recommend my next action</>}
           </button>
@@ -220,16 +237,19 @@ export function RecentActivityPanel({ tasks, loading }: { tasks: Task[]; loading
 export function AIRecommendationsPanel({
   disabled,
   googleConnected,
+  refreshKey,
   onNotify,
 }: {
   disabled: boolean;
   googleConnected: boolean;
+  refreshKey: number;
   onNotify: (message: string, tone?: "success" | "error" | "info") => void;
 }) {
   const [runningId, setRunningId] = useState("");
   const [results, setResults] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const recommendations: Recommendation[] = [
+  const automaticBatchKey = useRef<string | null>(null);
+  const recommendations = useMemo<Recommendation[]>(() => [
     {
       id: "priorities",
       title: "Choose my next priority",
@@ -256,13 +276,13 @@ export function AIRecommendationsPanel({
       mode: "secretary",
       disabled: !googleConnected,
     },
-  ];
+  ], [googleConnected]);
 
-  async function runRecommendation(recommendation: Recommendation) {
+  const runRecommendation = useCallback(async (recommendation: Recommendation, notifyUser = true) => {
     setRunningId(recommendation.id);
     setErrors((current) => ({ ...current, [recommendation.id]: "" }));
     setResults((current) => ({ ...current, [recommendation.id]: "" }));
-    onNotify(`Running: ${recommendation.title}…`, "info");
+    if (notifyUser) onNotify(`Running: ${recommendation.title}…`, "info");
     try {
       const secretary = recommendation.mode === "secretary";
       const response = await fetch(secretary ? "/api/google/assistant" : "/api/assistant", {
@@ -277,18 +297,35 @@ export function AIRecommendationsPanel({
         throw new Error(result.error ?? "The assistant could not complete this recommendation.");
       }
       setResults((current) => ({ ...current, [recommendation.id]: result.answer! }));
-      onNotify(`${recommendation.title} is ready.`);
+      if (notifyUser) onNotify(`${recommendation.title} is ready.`);
+      return true;
     } catch (error) {
       const message = apiErrorMessage(error, "The assistant could not complete this recommendation.");
       setErrors((current) => ({
         ...current,
         [recommendation.id]: message,
       }));
-      onNotify(message, "error");
+      if (notifyUser) onNotify(message, "error");
+      return false;
     } finally {
       setRunningId("");
     }
-  }
+  }, [onNotify]);
+
+  useEffect(() => {
+    if (disabled) return;
+    const batchKey = String(refreshKey);
+    if (automaticBatchKey.current === batchKey) return;
+    automaticBatchKey.current = batchKey;
+    void (async () => {
+      let completed = 0;
+      for (const recommendation of recommendations) {
+        if (recommendation.disabled) continue;
+        if (await runRecommendation(recommendation, false)) completed += 1;
+      }
+      if (completed > 0) onNotify(`AI recommendations updated (${completed}).`);
+    })();
+  }, [disabled, refreshKey, recommendations, runRecommendation, onNotify]);
 
   return (
     <section className="panel recommendations-panel" aria-labelledby="recommendations-title">
@@ -296,7 +333,7 @@ export function AIRecommendationsPanel({
         <div>
           <span className="insight-eyebrow">AI-POWERED NEXT STEPS</span>
           <h2 id="recommendations-title">Recommendations</h2>
-          <p>Run a focused review using your planner or connected Google data.</p>
+          <p>Available recommendations run automatically when Home opens and after each dashboard refresh. Google reviews run only when connected.</p>
         </div>
         <span className="insight-heading-icon recommendations-heading-icon"><Sparkles size={17} /></span>
       </div>
@@ -321,7 +358,7 @@ export function AIRecommendationsPanel({
           );
         })}
       </div>
-      <p className="recommendations-footnote">Each card runs only when selected. Google data is sent to the AI provider only for the selected Google review; no external actions are executed.</p>
+      <p className="recommendations-footnote">Automatic runs use AI for each available card. Planner data is sent for task recommendations; Google data is sent only for Google-connected reviews. These recommendations never execute external actions.</p>
     </section>
   );
 }

@@ -87,6 +87,41 @@ test("does not retry with a fallback when Gemini rejects the API key", async () 
   assert.equal(requestCount, 1);
 });
 
+test("includes all 224 planner records in Gemini task context", async () => {
+  const tasks = Array.from({ length: 224 }, (_, index) => ({
+    ...task,
+    id: `task-${String(index + 1).padStart(3, "0")}`,
+    title: `Planner item ${index + 1}`,
+    completed: index % 4 === 0,
+  }));
+  let requestBody = "";
+  globalThis.fetch = async (_input, init) => {
+    requestBody = String(init?.body ?? "");
+    return Response.json({ candidates: [{ content: { parts: [{ text: "I reviewed all planner items." }] } }] });
+  };
+
+  const answer = await getPlannerAssistantAnswer("ask", "Review all my planner tasks.", tasks);
+  const payload = JSON.parse(requestBody) as {
+    contents: Array<{ parts: Array<{ text: string }> }>;
+  };
+  const promptText = payload.contents[0].parts[0].text;
+  const plannerJson = promptText.split("Planner data (JSON):\n")[1];
+  assert.ok(plannerJson);
+  const planner = JSON.parse(plannerJson) as {
+    total: number;
+    taskDetailsIncluded: number;
+    tasks: Array<{ title: string }>;
+    taskDetailsWereLimited?: boolean;
+  };
+
+  assert.equal(answer, "I reviewed all planner items.");
+  assert.equal(planner.total, 224);
+  assert.equal(planner.taskDetailsIncluded, 224);
+  assert.equal(planner.tasks.length, 224);
+  assert.ok(planner.tasks.some((item) => item.title === "Planner item 224"));
+  assert.equal(planner.taskDetailsWereLimited, undefined);
+});
+
 test("reports temporary high demand when all models are unavailable", async () => {
   let requestCount = 0;
   globalThis.fetch = async () => {

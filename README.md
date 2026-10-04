@@ -432,7 +432,9 @@ method). Prayer anchors are displayed separately; work blocks are validated
 to avoid overlap, the configured window, and the prayer-time buffers. Selected
 schedule blocks are saved as Notion date-times in the device's local time zone.
 Only the task breakdown and exact task details needed for planning are sent to
-Google Gemini; task details are limited to 150 per request. Gemini 3.8 Flash
+Google Gemini. Planner-specific requests include all tasks loaded from Notion
+(up to the app's 2,000-item fetch limit), so recommendations and updates are
+not silently restricted to the first 150 records. Gemini 3.8 Flash
 is tried first and automatically falls back to Gemini 3.5 Flash-Lite on
 temporary overloads or timeouts.
 
