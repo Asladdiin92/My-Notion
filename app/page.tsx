@@ -866,7 +866,7 @@ export default function DashboardPage() {
     setCompletingTaskId(task.id);
     setActionError("");
     try {
-      const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/complete`, {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ completed: !task.completed }),
