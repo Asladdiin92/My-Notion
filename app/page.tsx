@@ -68,6 +68,7 @@ const emptyGoogleSummary: GoogleWorkspaceSummary = {
   events: [],
   files: [],
 };
+const dashboardTabs = ["overview", "tasks", "projects", "notes", "calendar", "progress", "planner-assistant"];
 
 function countBy(tasks: Task[], select: (task: Task) => string) {
   const counts = new Map<string, number>();
@@ -142,45 +143,57 @@ function getMyDayTasks(tasks: Task[], today: string): Task[] {
 
 function Sidebar({
   onClose,
+  activeTarget,
+  onSelectTarget,
   taskCount,
   projectCount,
   meetingCount,
 }: {
   onClose?: () => void;
+  activeTarget: string;
+  onSelectTarget: (target: string) => void;
   taskCount: number;
   projectCount: number;
   meetingCount: number;
 }) {
-  const [activeTarget, setActiveTarget] = useState("overview");
-  useEffect(() => {
-    const syncActiveTarget = () => setActiveTarget(window.location.hash.slice(1) || "overview");
-    syncActiveTarget();
-    window.addEventListener("hashchange", syncActiveTarget);
-    return () => window.removeEventListener("hashchange", syncActiveTarget);
-  }, []);
-
-  const navigation: Array<{ label: string; icon: LucideIcon; target: string; count?: number; badge?: string }> = [
-    { label: "Home", icon: LayoutDashboard, target: "overview" },
-    { label: "Tasks", icon: ListChecks, target: "tasks", count: taskCount, badge: "tasks-badge" },
-    { label: "Projects", icon: GitBranch, target: "projects", count: projectCount, badge: "projects-badge" },
-    { label: "Notes", icon: StickyNote, target: "notes" },
-    { label: "Calendar", icon: CalendarDays, target: "calendar", count: meetingCount, badge: "calendar-badge" },
-    { label: "Analytics", icon: Target, target: "progress" },
-    { label: "AI Assistant", icon: Sparkles, target: "planner-assistant" },
+  const navigation: Array<{ label: string; icon: LucideIcon; target: string; panel: string; count?: number; badge?: string }> = [
+    { label: "Home", icon: LayoutDashboard, target: "overview", panel: "overview-tab" },
+    { label: "Tasks", icon: ListChecks, target: "tasks", panel: "tasks-tab", count: taskCount, badge: "tasks-badge" },
+    { label: "Projects", icon: GitBranch, target: "projects", panel: "projects-tab", count: projectCount, badge: "projects-badge" },
+    { label: "Notes", icon: StickyNote, target: "notes", panel: "notes-tab" },
+    { label: "Calendar", icon: CalendarDays, target: "calendar", panel: "calendar-tab", count: meetingCount, badge: "calendar-badge" },
+    { label: "Analytics", icon: Target, target: "progress", panel: "progress-tab" },
+    { label: "AI Assistant", icon: Sparkles, target: "planner-assistant", panel: "ai-assistant-tab" },
   ];
   return (
     <aside className="sidebar">
-      <a className="brand" href="#overview" onClick={onClose}>
+      <a className="brand" href="#overview" onClick={(event) => {
+        event.preventDefault();
+        onSelectTarget("overview");
+        onClose?.();
+      }}>
         <span className="brand-mark"><Terminal size={17} strokeWidth={2.2} /></span>
         <span className="brand-copy"><strong>ASLADIN</strong><small>Command v2.4</small></span>
       </a>
       <div className="sidebar-label">WORKSPACE</div>
-      <nav className="sidebar-nav" aria-label="Main navigation">
-        {navigation.map(({ label, icon: Icon, target, count, badge }) => (
-          <a className={`nav-link${activeTarget === target ? " active" : ""}`} aria-current={activeTarget === target ? "page" : undefined} href={`#${target}`} onClick={onClose} key={label}>
+      <nav className="sidebar-nav" role="tablist" aria-label="Main navigation" aria-orientation="vertical">
+        {navigation.map(({ label, icon: Icon, target, panel, count, badge }) => (
+          <button id={`nav-${target}`} type="button" role="tab" aria-selected={activeTarget === target} aria-controls={panel} tabIndex={activeTarget === target ? 0 : -1}
+            className={`nav-link${activeTarget === target ? " active" : ""}`} onKeyDown={(event) => {
+              if (!["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft"].includes(event.key)) return;
+              event.preventDefault();
+              const currentIndex = navigation.findIndex((item) => item.target === target);
+              const direction = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
+              const next = navigation[(currentIndex + direction + navigation.length) % navigation.length];
+              onSelectTarget(next.target);
+              document.getElementById(`nav-${next.target}`)?.focus();
+            }} onClick={() => {
+            onSelectTarget(target);
+            onClose?.();
+          }} key={label}>
             <Icon size={16} strokeWidth={1.8} /><span>{label}</span>
             {count !== undefined && count > 0 && <span className={`nav-badge ${badge}`}>{count}</span>}
-          </a>
+          </button>
         ))}
       </nav>
       <div className="sidebar-label projects-label">CONNECTED WORKSPACE</div>
@@ -214,6 +227,34 @@ function MetricCard({
       <div className="metric-value-row"><strong className="metric-value">{value}</strong>{trend && <span className="metric-trend">{trend === "up" ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}{note}</span>}</div>
       {!trend && <div className="metric-note">{note}</div>}
     </article>
+  );
+}
+
+function NotesPanel({ tasks }: { tasks: Task[] }) {
+  const notes = tasks
+    .flatMap((task) => task.notes?.trim()
+      ? [{ task, note: task.notes.trim(), timestamp: task.updatedAt || task.createdAt }]
+      : [])
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  return (
+    <section className="panel notes-panel" aria-labelledby="notes-title">
+      <div className="section-heading notes-heading">
+        <div><span className="insight-eyebrow">KNOWLEDGE BASE</span><h2 id="notes-title">Notes from your planner</h2><p>Notes attached to real Notion planner items.</p></div>
+        <span className="notes-count">{notes.length} note{notes.length === 1 ? "" : "s"}</span>
+      </div>
+      {notes.length > 0 ? <div className="notes-grid">
+        {notes.map(({ task, note, timestamp }) => (
+          <article className="note-card" key={task.id}>
+            <div className="note-card-meta"><span>{task.area || task.type}</span><time dateTime={Number.isNaN(new Date(timestamp).getTime()) ? undefined : timestamp}>
+              {Number.isNaN(new Date(timestamp).getTime()) ? "Date unavailable" : formatDate(timestamp)}</time></div>
+            <h3>{task.title}</h3>
+            <p>{note}</p>
+            <a href={task.url} target="_blank" rel="noreferrer">Open planner item <ExternalLink size={12} /></a>
+          </article>
+        ))}
+      </div> : <div className="notes-empty"><BookOpen size={20} /><strong>No planner notes yet</strong><p>Add notes to a Notion item and they will appear here.</p></div>}
+    </section>
   );
 }
 
@@ -658,6 +699,9 @@ export default function DashboardPage() {
   const [search, setSearch] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" | "info" } | null>(null);
+  const [archiveTask, setArchiveTask] = useState<Task | null>(null);
   const [taskOptions, setTaskOptions] = useState<TaskOptions | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -670,7 +714,35 @@ export default function DashboardPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [googleError, setGoogleError] = useState("");
 
-  const loadTasks = useCallback(async () => {
+  const notify = useCallback((message: string, tone: "success" | "error" | "info" = "success") => {
+    setToast({ message, tone });
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = window.setTimeout(() => setToast(null), 3800);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!archiveTask) return;
+    const cancelButton = document.querySelector<HTMLButtonElement>(".confirm-cancel");
+    cancelButton?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setArchiveTask(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [archiveTask]);
+
+  const selectTab = useCallback((target: string) => {
+    if (!dashboardTabs.includes(target)) return;
+    window.history.replaceState(null, "", `#${target}`);
+    setActiveTab(target);
+    setSidebarOpen(false);
+  }, []);
+
+  const loadTasks = useCallback(async (showToast = false) => {
     setState("loading");
     setError("");
     try {
@@ -681,14 +753,17 @@ export default function DashboardPage() {
       setTaskOptions(result.options ?? null);
       setState("ready");
       setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
+      if (showToast) notify("Workspace data refreshed.");
     } catch (loadError) {
       setTasks([]);
       setState("error");
-      setError(loadError instanceof Error ? loadError.message : "Could not load your Notion database.");
+      const message = loadError instanceof Error ? loadError.message : "Could not load your Notion database.";
+      setError(message);
+      if (showToast) notify(message, "error");
     }
-  }, []);
+  }, [notify]);
 
-  const loadGoogleSummary = useCallback(async () => {
+  const loadGoogleSummary = useCallback(async (showToast = false) => {
     setGoogleLoading(true);
     setGoogleError("");
     try {
@@ -698,12 +773,15 @@ export default function DashboardPage() {
       if (!response.ok) throw new Error(result.error ?? "Google session expired. Reconnect your Google account.");
       setGoogleSummary(result);
       if (result.error) setGoogleError(result.error);
+      else if (showToast) notify("Google Workspace data refreshed.");
     } catch (loadError) {
-      setGoogleError(loadError instanceof Error ? loadError.message : "Could not load Google Workspace.");
+      const message = loadError instanceof Error ? loadError.message : "Could not load Google Workspace.";
+      setGoogleError(message);
+      if (showToast) notify(message, "error");
     } finally {
       setGoogleLoading(false);
     }
-  }, []);
+  }, [notify]);
 
   useEffect(() => {
     if (isLoaded && hasAccess) void loadTasks();
@@ -717,14 +795,17 @@ export default function DashboardPage() {
     const result = new URLSearchParams(window.location.search).get("google");
     if (result === "connected") {
       setSuccessMessage("Google Workspace connected for this browser session.");
+      notify("Google Workspace connected.");
       window.history.replaceState(null, "", window.location.pathname + window.location.hash);
     } else if (result) {
-      setGoogleError(result === "auth-error"
+      const message = result === "auth-error"
         ? "Google authorization was not verified. Sign in to the dashboard and try connecting again."
-        : "Google connection did not complete. Check your OAuth settings and try again.");
+        : "Google connection did not complete. Check your OAuth settings and try again.";
+      setGoogleError(message);
+      notify(message, "error");
       window.history.replaceState(null, "", window.location.pathname + window.location.hash);
     }
-  }, []);
+  }, [notify]);
 
   function handleTaskSaved(task: Task) {
     setTasks((current) => editingTask
@@ -733,7 +814,9 @@ export default function DashboardPage() {
     setCreateDialogOpen(false);
     setEditingTask(null);
     setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
-    setSuccessMessage(editingTask ? `“${task.title}” was updated.` : `“${task.title}” was added to your Notion planner.`);
+    const message = editingTask ? `“${task.title}” was updated.` : `“${task.title}” was added to your Notion planner.`;
+    setSuccessMessage(message);
+    notify(message);
   }
 
   function handleAssistantTaskSaved(task: Task) {
@@ -746,7 +829,6 @@ export default function DashboardPage() {
   const clearTaskToBreakDown = useCallback(() => setTaskToBreakDown(null), []);
 
   async function handleTaskDelete(task: Task) {
-    if (!window.confirm(`Archive “${task.title}” from your Notion planner? This can be restored from Notion’s trash.`)) return;
     setDeletingTaskId(task.id);
     setActionError("");
     try {
@@ -755,13 +837,30 @@ export default function DashboardPage() {
       if (!response.ok || !result.ok) throw new Error(result.error ?? "Could not archive the planner item.");
       setTasks((current) => current.filter((item) => item.id !== task.id));
       setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
-      setSuccessMessage(`“${task.title}” was archived from your planner.`);
+      const message = `“${task.title}” was archived from your planner.`;
+      setSuccessMessage(message);
+      notify(message);
     } catch (deleteError) {
-      setActionError(deleteError instanceof Error ? deleteError.message : "Could not archive the planner item.");
+      const message = deleteError instanceof Error ? deleteError.message : "Could not archive the planner item.";
+      setActionError(message);
+      notify(message, "error");
     } finally {
       setDeletingTaskId("");
     }
   }
+
+  async function confirmArchiveTask() {
+    if (!archiveTask) return;
+    const task = archiveTask;
+    setArchiveTask(null);
+    await handleTaskDelete(task);
+  }
+
+  useEffect(() => {
+    const target = window.location.hash.slice(1);
+    if (dashboardTabs.includes(target)) setActiveTab(target);
+    else window.history.replaceState(null, "", "#overview");
+  }, []);
 
   async function handleTaskComplete(task: Task) {
     setCompletingTaskId(task.id);
@@ -779,8 +878,11 @@ export default function DashboardPage() {
       setTasks((current) => current.map((item) => item.id === task.id ? result.task! : item));
       setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
       setSuccessMessage(`“${task.title}” marked ${result.task.completed ? "complete" : "not complete"}.`);
+      notify(`“${task.title}” marked ${result.task.completed ? "complete" : "not complete"}.`);
     } catch (completeError) {
-      setActionError(completeError instanceof Error ? completeError.message : "Could not update task completion.");
+      const message = completeError instanceof Error ? completeError.message : "Could not update task completion.";
+      setActionError(message);
+      notify(message, "error");
     } finally {
       setCompletingTaskId("");
     }
@@ -793,13 +895,17 @@ export default function DashboardPage() {
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "Could not disconnect Google.");
       setGoogleSummary(emptyGoogleSummary);
+      notify("Google Workspace disconnected and access revoked.");
     } catch (disconnectError) {
-      setGoogleError(disconnectError instanceof Error ? disconnectError.message : "Could not disconnect Google.");
+      const message = disconnectError instanceof Error ? disconnectError.message : "Could not disconnect Google.";
+      setGoogleError(message);
+      notify(message, "error");
     }
   }
 
   const today = isoToday();
   const myDayTasks = useMemo(() => getMyDayTasks(tasks, today), [tasks, today]);
+  const myDayTaskCount = tasks.filter((task) => isScheduledForDay(task, today) || isOverdue(task, today)).length;
   const meetingsToday = googleSummary.events.filter((event) =>
     event.start && plannerDateKey(event.start) === today
   ).length;
@@ -822,7 +928,7 @@ export default function DashboardPage() {
       const areaTasks = tasks.filter((task) => (task.area.trim() || "Other") === area.name);
       const completed = areaTasks.filter((task) => task.completed).length;
       return { ...area, completed, percentage: areaTasks.length ? Math.round((completed / areaTasks.length) * 100) : 0 };
-    }).filter((area) => area.name !== "Unassigned");
+    }).filter((area) => area.name !== "Unassigned" && area.name !== "Other");
   const typeProgress = countBy(tasks, (task) => task.type).map((type) => {
     const group = tasks.filter((task) => task.type === type.name);
     return {
@@ -859,6 +965,16 @@ export default function DashboardPage() {
   const courseWorkloadHours = tasks.filter((task) => !task.completed)
     .reduce((sum, task) => sum + (task.estimatedHours ?? 0), 0);
   const greeting = new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric", timeZone: PLANNER_TIME_ZONE }).format(new Date());
+  const tabLabels: Record<string, string> = {
+    overview: "Home",
+    tasks: "Tasks",
+    projects: "Projects",
+    notes: "Notes",
+    calendar: "Calendar",
+    progress: "Analytics",
+    "planner-assistant": "AI Assistant",
+  };
+  const activeTabLabel = tabLabels[activeTab] ?? "Home";
 
   if (!isLoaded) {
     return <main className="auth-page"><LoaderCircle size={20} className="spin" /><span>Checking your access…</span></main>;
@@ -876,22 +992,23 @@ export default function DashboardPage() {
 
   return (
     <div className="app-shell" id="overview">
-      <div className={`sidebar-wrap${sidebarOpen ? " sidebar-open" : ""}`}><Sidebar onClose={() => setSidebarOpen(false)}
-        taskCount={myDayTasks.length} projectCount={areaData.length} meetingCount={meetingsToday} /></div>
+      <div className={`sidebar-wrap${sidebarOpen ? " sidebar-open" : ""}`}><Sidebar activeTarget={activeTab} onSelectTarget={selectTab} onClose={() => setSidebarOpen(false)}
+        taskCount={myDayTaskCount} projectCount={areaData.length} meetingCount={meetingsToday} /></div>
       {sidebarOpen && <button className="sidebar-overlay" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
       <main className="main-content">
         <header className="topbar">
           <button className="mobile-menu round-button" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Menu size={18} /></button>
-          <div className="breadcrumbs"><span>Workspace</span><span>/</span><strong>Overview</strong></div>
+          <div className="breadcrumbs"><span>ASLADIN</span><span>/</span><strong>{activeTabLabel}</strong></div>
           <div className="topbar-right">
             <span className="updated-label">{lastUpdated ? `Updated at ${lastUpdated}` : "Live from Notion"}</span>
-            <button className={`refresh-button${state === "loading" ? " refreshing" : ""}`} onClick={() => void loadTasks()} disabled={state === "loading"} aria-label="Refresh tasks"><RefreshCw size={14} /> <span>Refresh</span></button>
+            <button className={`refresh-button${state === "loading" ? " refreshing" : ""}`} onClick={() => void loadTasks(true)} disabled={state === "loading"} aria-label="Refresh tasks"><RefreshCw size={14} /> <span>Refresh</span></button>
             <span className={`connection-label ${state === "ready" ? "connected" : state === "error" ? "disconnected" : ""}`}><i />{state === "ready" ? "Connected" : state === "error" ? "Not connected" : "Connecting"}</span>
             <UserButton />
           </div>
         </header>
 
         <div className="page-wrap">
+          <div className={`tab-content${activeTab === "overview" ? " is-active" : ""}`} id="overview-tab" role="tabpanel" aria-labelledby="nav-overview" aria-hidden={activeTab !== "overview"}>
           <section className="welcome-row command-center-banner">
             <div><div className="date-line"><CalendarDays size={13} />{greeting}</div><h1>ASLADIN AI COMMAND CENTER</h1><p>Your workspace for tasks, projects, and a more focused day.</p></div>
             <a className="open-notion-button" href="https://www.notion.so" target="_blank" rel="noreferrer">Open Notion <ExternalLink size={13} /></a>
@@ -922,8 +1039,8 @@ export default function DashboardPage() {
               <p className="my-day-empty">{state === "ready" ? "No overdue, due-today, or daily recurring items. You’re clear for today." : "Connect to Notion to see today's focus."}</p>
             )}
             <div className="my-day-footer">
-              <span>{myDayTasks.length} focus item{myDayTasks.length === 1 ? "" : "s"}{tasks.some((task) => isOverdue(task, today)) ? ` · ${tasks.filter((task) => isOverdue(task, today)).length} overdue` : ""}</span>
-              <button type="button" onClick={() => void document.getElementById("planner-assistant")?.scrollIntoView({ behavior: "smooth" })}>Plan my day with AI <Sparkles size={12} /></button>
+              <span>{myDayTaskCount} focus item{myDayTaskCount === 1 ? "" : "s"}{myDayTaskCount > myDayTasks.length ? ` · showing top ${myDayTasks.length}` : ""}{tasks.some((task) => isOverdue(task, today)) ? ` · ${tasks.filter((task) => isOverdue(task, today)).length} overdue` : ""}</span>
+              <button type="button" onClick={() => { selectTab("planner-assistant"); window.setTimeout(() => document.getElementById("planner-assistant")?.scrollIntoView({ behavior: "smooth" }), 0); }}>Plan my day with AI <Sparkles size={12} /></button>
             </div>
           </section>
 
@@ -932,7 +1049,7 @@ export default function DashboardPage() {
               <div><h2 id="google-workspace-title">Google Workspace</h2><p>{googleSummary.connected ? `Connected as ${googleSummary.email}` : "Connect Gmail, Calendar, and Drive for an on-demand AI briefing."}</p></div>
               <div className="google-workspace-actions">
                 {googleSummary.connected
-                  ? <button type="button" className="refresh-button" onClick={() => void loadGoogleSummary()} disabled={googleLoading}>{googleLoading ? "Refreshing..." : "Refresh"}</button>
+                  ? <button type="button" className="refresh-button" onClick={() => void loadGoogleSummary(true)} disabled={googleLoading}>{googleLoading ? "Refreshing..." : "Refresh"}</button>
                   : <a className="google-connect-button" href="/api/google/connect">Connect Google</a>}
                 {googleSummary.connected && <button type="button" className="google-disconnect-button" onClick={() => void handleGoogleDisconnect()}>Disconnect</button>}
               </div>
@@ -954,17 +1071,19 @@ export default function DashboardPage() {
           {actionError && <div className="connection-banner" role="alert"><span className="banner-icon"><AlertTriangle size={16} /></span><div><strong>Could not update the planner</strong><p>{actionError}</p></div><button onClick={() => setActionError("")}>Dismiss</button></div>}
 
           <section className="metrics-grid" aria-label="Task overview">
-            <MetricCard label="Tasks Today" value={myDayTasks.length} note="Due, recurring, or overdue" icon={ListChecks} tone="tone-green" />
+            <MetricCard label="Tasks Today" value={state === "ready" ? myDayTaskCount : "—"} note="Due, recurring, or overdue" icon={ListChecks} tone="tone-green" />
             <MetricCard label="Unread Emails" value={googleSummary.connected ? googleSummary.unreadEmails : "—"} note={googleSummary.connected ? "In your Gmail inbox" : "Connect Google to view"} icon={Mail} tone="tone-blue" />
             <MetricCard label="Meetings" value={googleSummary.connected ? meetingsToday : "—"} note={googleSummary.connected ? "On your calendar today" : "Connect Google to view"} icon={CalendarClock} tone="tone-violet" />
-            <MetricCard label="Projects" value={areaData.length} note="Active planner areas" icon={BriefcaseBusiness} tone="tone-amber" />
+            <MetricCard label="Project Areas" value={state === "ready" ? areaData.length : "—"} note="Distinct Notion areas" icon={BriefcaseBusiness} tone="tone-amber" />
           </section>
 
           <section className="dashboard-insights-grid" aria-label="Recent activity and AI recommendations">
-            <RecentActivityPanel tasks={tasks} />
-            <AIRecommendationsPanel disabled={state !== "ready"} googleConnected={googleSummary.connected} />
+            <RecentActivityPanel tasks={tasks} loading={state === "loading"} />
+            <AIRecommendationsPanel disabled={state !== "ready"} googleConnected={googleSummary.connected} onNotify={notify} />
           </section>
+          </div>
 
+          <div className={`tab-content${activeTab === "progress" ? " is-active" : ""}`} id="progress-tab" role="tabpanel" aria-labelledby="nav-progress" aria-hidden={activeTab !== "progress"}>
           <div className="section-heading" id="progress"><div><h2>Your progress</h2><p>See where your time and attention are going</p></div><span className="live-label"><i /> All insights from your database</span></div>
           <section className="charts-grid">
             <article className="panel chart-panel"><div className="panel-heading"><div><h3>Task status</h3><p>Completed vs. pending</p></div><span className="chart-heading-icon tone-green"><CheckCheck size={15} /></span></div><div className="status-chart-row"><StatusChart data={statusDistribution} /><div className="status-legend"><div><i className="legend-completed" /><span>Completed</span><strong>{metrics.completed}</strong></div><div><i className="legend-pending" /><span>Pending</span><strong>{metrics.pending}</strong></div></div></div></article>
@@ -992,13 +1111,19 @@ export default function DashboardPage() {
               </div>
             </article>
           </section>
+          </div>
 
+          <div className={`tab-content${activeTab === "planner-assistant" ? " is-active" : ""}`} id="ai-assistant-tab" role="tabpanel" aria-labelledby="nav-planner-assistant" aria-hidden={activeTab !== "planner-assistant"}>
           <PlannerAssistant disabled={state !== "ready"} tasks={tasks} options={taskOptions} googleConnected={googleSummary.connected}
             taskToBreakDown={taskToBreakDown} onBreakdownHandled={clearTaskToBreakDown}
             onTaskSaved={handleAssistantTaskSaved} />
+          </div>
 
-          <div className="content-grid">
+          <div className={`tab-content${activeTab === "calendar" ? " is-active" : ""}`} id="calendar-tab" role="tabpanel" aria-labelledby="nav-calendar" aria-hidden={activeTab !== "calendar"}>
             <CalendarCard tasks={tasks} options={taskOptions} />
+          </div>
+
+          <div className={`tab-content${activeTab === "projects" ? " is-active" : ""}`} id="projects-tab" role="tabpanel" aria-labelledby="nav-projects" aria-hidden={activeTab !== "projects"}>
             <section className="panel areas-panel" id="projects">
               <div className="panel-heading"><div><h2>Progress by area</h2><p>Completion across your focus areas</p></div><Target size={16} className="panel-title-icon" /></div>
               <div className="area-list">
@@ -1027,21 +1152,36 @@ export default function DashboardPage() {
             </section>
           </div>
 
-          <span className="section-anchor" id="notes" aria-hidden="true" />
+          <div className={`tab-content${activeTab === "tasks" ? " is-active" : ""}`} id="tasks-tab" role="tabpanel" aria-labelledby="nav-tasks" aria-hidden={activeTab !== "tasks"}>
           <TaskTable tasks={tasks} options={taskOptions} loading={state === "loading"} search={search} onSearch={setSearch}
             onCreate={() => { setEditingTask(null); setCreateDialogOpen(true); }}
             onEdit={(task) => { setCreateDialogOpen(false); setEditingTask(task); }}
             onComplete={(task) => void handleTaskComplete(task)}
             onBreakdown={(task) => {
               setTaskToBreakDown(task);
-              void document.getElementById("planner-assistant")?.scrollIntoView({ behavior: "smooth" });
+              selectTab("planner-assistant");
+              window.setTimeout(() => document.getElementById("planner-assistant")?.scrollIntoView({ behavior: "smooth" }), 0);
             }}
-            onDelete={(task) => void handleTaskDelete(task)}
+            onDelete={(task) => setArchiveTask(task)}
             createDisabled={state !== "ready" || !taskOptions} deleting={Boolean(deletingTaskId)} completingId={completingTaskId} />
+          </div>
+
+          <div className={`tab-content${activeTab === "notes" ? " is-active" : ""}`} id="notes-tab" role="tabpanel" aria-labelledby="nav-notes" aria-hidden={activeTab !== "notes"}>
+            <NotesPanel tasks={tasks} />
+          </div>
 
           <footer className="page-footer"><span>Made for a more focused day</span><span><i /> Connected securely to your Notion database <span className="footer-separator">·</span> {tasks.length} planner items</span></footer>
         </div>
       </main>
+      {toast && <div className={`command-toast toast-${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"} aria-live="polite"><span>{toast.message}</span><button type="button" onClick={() => setToast(null)} aria-label="Dismiss notification">×</button></div>}
+      {archiveTask && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setArchiveTask(null); }}>
+        <section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="archive-dialog-title" aria-describedby="archive-dialog-description">
+          <span className="confirm-dialog-icon"><Trash2 size={17} /></span>
+          <h2 id="archive-dialog-title">Archive this planner item?</h2>
+          <p id="archive-dialog-description">“{archiveTask.title}” will move to Notion&apos;s trash. You can restore it there later.</p>
+          <div><button type="button" className="confirm-cancel" onClick={() => setArchiveTask(null)}>Keep item</button><button type="button" className="confirm-danger" onClick={() => void confirmArchiveTask()}>Archive item</button></div>
+        </section>
+      </div>}
       {(createDialogOpen || editingTask) && taskOptions && <TaskDialog key={editingTask?.id ?? "new"} options={taskOptions} task={editingTask}
         onClose={() => { setCreateDialogOpen(false); setEditingTask(null); }} onSaved={handleTaskSaved} />}
     </div>

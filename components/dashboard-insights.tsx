@@ -38,7 +38,7 @@ function activityDate(value: string): string {
   }).format(date);
 }
 
-export function RecentActivityPanel({ tasks }: { tasks: Task[] }) {
+export function RecentActivityPanel({ tasks, loading }: { tasks: Task[]; loading: boolean }) {
   const activities = tasks
     .map((task) => {
       const created = new Date(task.createdAt).getTime();
@@ -89,6 +89,11 @@ export function RecentActivityPanel({ tasks }: { tasks: Task[] }) {
             );
           })}
         </ol>
+      ) : loading ? (
+        <div className="activity-empty">
+          <LoaderCircle size={15} className="spin" />
+          <p>Loading recent planner activity…</p>
+        </div>
       ) : (
         <div className="activity-empty">
           <span className="activity-check"><Circle size={13} /></span>
@@ -103,9 +108,11 @@ export function RecentActivityPanel({ tasks }: { tasks: Task[] }) {
 export function AIRecommendationsPanel({
   disabled,
   googleConnected,
+  onNotify,
 }: {
   disabled: boolean;
   googleConnected: boolean;
+  onNotify: (message: string, tone?: "success" | "error" | "info") => void;
 }) {
   const [runningId, setRunningId] = useState("");
   const [results, setResults] = useState<Record<string, string>>({});
@@ -143,6 +150,7 @@ export function AIRecommendationsPanel({
     setRunningId(recommendation.id);
     setErrors((current) => ({ ...current, [recommendation.id]: "" }));
     setResults((current) => ({ ...current, [recommendation.id]: "" }));
+    onNotify(`Running: ${recommendation.title}…`, "info");
     try {
       const secretary = recommendation.mode === "secretary";
       const response = await fetch(secretary ? "/api/google/assistant" : "/api/assistant", {
@@ -157,11 +165,14 @@ export function AIRecommendationsPanel({
         throw new Error(result.error ?? "The assistant could not complete this recommendation.");
       }
       setResults((current) => ({ ...current, [recommendation.id]: result.answer! }));
+      onNotify(`${recommendation.title} is ready.`);
     } catch (error) {
+      const message = error instanceof Error ? error.message : "The assistant could not complete this recommendation.";
       setErrors((current) => ({
         ...current,
-        [recommendation.id]: error instanceof Error ? error.message : "The assistant could not complete this recommendation.",
+        [recommendation.id]: message,
       }));
+      onNotify(message, "error");
     } finally {
       setRunningId("");
     }
