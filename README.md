@@ -28,7 +28,7 @@ property exists. Missing optional columns are not fabricated or seeded.
 - [Connect your Notion database](#connect-your-notion-database)
 - [Connect Google Workspace](#connect-google-workspace)
 - [Connect GitHub and Telegram](#connect-github-and-telegram)
-- [Deploy to Vercel](#deploy-to-vercel)
+- [Deploy to Render, Vercel, and MongoDB Atlas](#deploy-to-render-vercel-and-mongodb-atlas)
 - [Security notes](#security-notes)
 - [Troubleshooting](#troubleshooting)
 - [Ideas for learning and extending the project](#ideas-for-learning-and-extending-the-project)
@@ -530,21 +530,194 @@ delete, create, or edit Google data. Google OAuth currently requests broad
 Gmail and Drive scopes, which may require Google OAuth app verification before
 the app can serve users beyond your test accounts.
 
-## Deploy to Vercel
+## Deploy to Render, Vercel, and MongoDB Atlas
 
-1. Push the project to a Git repository you control and import it into Vercel.
-2. In the Vercel project settings, add `NOTION_API_KEY` (or `NOTION_TOKEN`),
-   `NOTION_DATABASE_ID`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
-   `CLERK_SECRET_KEY`, `ALLOWED_EMAILS`, `GEMINI_API_KEY`, and
-   `TAVILY_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-   `GOOGLE_REDIRECT_URI`, `GOOGLE_CALLBACK_URL`, and `SESSION_SECRET` under
-   **Environment Variables**. Use the Clerk keys from your Clerk application;
-   set values for the Vercel environments you will use.
-3. Add property-name overrides if necessary. Ensure the allowlisted email is
-   verified in Clerk.
-4. Redeploy after changing environment variables.
+This repository is one Next.js application, not separate frontend and backend
+projects. The setup below runs the Next.js server on Render and deploys the
+same project to Vercel for the website. Vercel forwards `/api/*` requests to
+Render using the root-level `vercel.json`; browser requests remain on the
+Vercel origin. This is a deployment arrangement, not a code-level separation
+of frontend and backend.
 
-Do **not** upload `.env.local` or publish your integration secret. Vercel uses these variables on the server to call Notion and Google APIs.
+### 1. Deploy the Next.js server to Render
+
+1. Push this repository to GitHub and create a Render **Web Service** from it.
+   Select the correct repository and branch. Set **Root Directory** to `.`
+   (the repository root, where `package.json` and `package-lock.json` are
+   located) and select the Node runtime.
+2. Use these commands:
+
+   ```text
+   Build command: npm ci && npm run build
+   Start command: npm run start
+   ```
+
+   `package.json` defines `build` as `next build` and `start` as `next start`.
+   Choose Node.js **24.x LTS** in Render's runtime settings (or set
+   `NODE_VERSION` to the current supported 24.x release). Render supplies the
+   listening port through `PORT`; do not add or hard-code a port.
+3. After the first successful deployment, copy the service's public HTTPS
+   hostname, such as `https://my-notion-api.onrender.com`.
+4. Edit `vercel.json` and replace
+   `https://YOUR-RENDER-SERVICE.onrender.com` with that exact hostname. Keep
+   the `/api/:path*` suffix. Commit and push this change before deploying the
+   Vercel project so API requests do not point to the placeholder.
+
+### 2. Add environment variables to Render
+
+Render runs the API routes, so put the app's server-side configuration and
+provider credentials in **Render → Web Service → Environment**. Add one
+environment variable per row (do not paste the `.env.example` file as a
+single value). The minimum working configuration is:
+
+```dotenv
+NOTION_API_KEY=your_notion_integration_secret
+NOTION_DATABASE_ID=your_notion_database_id
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
+CLERK_SECRET_KEY=your_clerk_secret_key
+ALLOWED_EMAILS=your_verified_clerk_email@example.com
+```
+
+The Clerk variables are also needed on Vercel (next section), because both
+deployments run the app's Clerk middleware. `ALLOWED_EMAILS` is checked by the
+backend routes and belongs on Render.
+
+For Atlas-backed features, set:
+
+```dotenv
+MONGO_URI=mongodb+srv://...
+MONGO_DB_NAME=asladin_command_center
+```
+
+Add optional provider variables to Render only when you enable the feature:
+
+| Feature | Variables |
+| --- | --- |
+| AI assistant | `GEMINI_API_KEY` |
+| Web research | `TAVILY_API_KEY` |
+| Google Workspace | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `GOOGLE_CALLBACK_URL`, `SESSION_SECRET` |
+| GitHub App | `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, `GITHUB_PRIVATE_KEY` |
+| Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_WEBHOOK_URL` |
+
+MongoDB is optional unless you use Telegram or another Mongo-backed integration:
+set both `MONGO_URI` and `MONGO_DB_NAME` on Render. The app also accepts the
+legacy database-name variable `MONGO_DATABASE_NAME`, but use `MONGO_DB_NAME`
+for new deployments.
+
+The following Notion property overrides are optional. Add only the ones whose
+default property names differ from your Notion database; the defaults shown
+match `.env.example`:
+
+| Variable | Default property |
+| --- | --- |
+| `NOTION_TITLE_PROPERTY` | `Item` |
+| `NOTION_STATUS_PROPERTY` | `Status` |
+| `NOTION_PRIORITY_PROPERTY` | `Priority` |
+| `NOTION_TYPE_PROPERTY` | `Type` |
+| `NOTION_DUE_DATE_PROPERTY` | `Date` |
+| `NOTION_AREA_PROPERTY` | `Area` |
+| `NOTION_COURSE_PROPERTY` | `Course` |
+| `NOTION_COURSE_CODE_PROPERTY` | `Course Code` |
+| `NOTION_ESTIMATED_HOURS_PROPERTY` | `Estimated Hours` |
+| `NOTION_ASSESSMENT_PROPERTY` | `Assessment Type` |
+| `NOTION_ACTUAL_HOURS_PROPERTY` | `Actual Hours` |
+| `NOTION_CREDIT_HOURS_PROPERTY` | `Credit Hours` |
+| `NOTION_DELIVERABLE_PROPERTY` | `Deliverable` |
+| `NOTION_INSTRUCTOR_PROPERTY` | `Instructor` |
+| `NOTION_PEOPLE_INSTRUCTOR_PROPERTY` | `People / Instructor` |
+| `NOTION_MARKS_GRADE_PROPERTY` | `Marks / Grade` |
+| `NOTION_NEXT_REVIEW_DATE_PROPERTY` | `Next Review Date` |
+| `NOTION_NOTES_PROPERTY` | `Notes` |
+| `NOTION_RECURRENCE_PROPERTY` | `Recurrence` |
+| `NOTION_RESOURCE_LINK_PROPERTY` | `Resource Link` |
+| `NOTION_SEMESTER_PROPERTY` | `Semester` |
+| `NOTION_TIME_BLOCK_PROPERTY` | `Time Block` |
+| `NOTION_VENUE_LINK_PROPERTY` | `Venue / Link` |
+| `NOTION_NEXT_ACTION_PROPERTY` | `Next Action` |
+| `NOTION_COMPLETED_PROPERTY` | `Completed` |
+
+`NOTION_TOKEN` is accepted as an alternative to `NOTION_API_KEY`. Never put
+server secrets in a `NEXT_PUBLIC_*` variable. After changing Render
+environment variables, redeploy or restart the service.
+
+### 3. Deploy the website to Vercel
+
+1. Import the same GitHub repository and branch into Vercel as a Next.js
+   project. Set **Root Directory** to `.` (the folder containing
+   `package.json`, `package-lock.json`, and `vercel.json`), use the Next.js
+   framework preset, and choose Node.js **24.x** in the project settings.
+   Leave **Build Command** as the detected default `npm run build` (equivalent
+   to `next build` here), and leave the output directory at its Next.js
+   default. Vercel installs dependencies from the lockfile.
+2. Set these two variables in **Vercel → Project → Settings → Environment
+   Variables**, for the environments you deploy:
+
+   ```dotenv
+   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
+   CLERK_SECRET_KEY=your_clerk_secret_key
+   ```
+
+   Use the same Clerk application and matching keys as on Render. Do not add
+   the Notion, MongoDB, AI, Google, GitHub, Telegram, or `ALLOWED_EMAILS`
+   secrets to Vercel for this arrangement; the API requests are proxied to
+   Render. The Clerk secret is required by middleware and must remain server
+   side.
+3. In the repository's `vercel.json`, replace
+   `https://YOUR-RENDER-SERVICE.onrender.com` with the actual Render HTTPS
+   hostname before deploying. Commit and push the change.
+4. Deploy Vercel and open the assigned production URL. The root
+   `vercel.json` forwards `/api/*` to Render; Vercel continues to serve the
+   Next.js page and its static assets.
+
+### 4. Set public callback URLs
+
+Use the Vercel production domain (or your custom public domain) for provider
+callbacks and webhooks; Vercel proxies these API paths to Render.
+
+- For Google OAuth, set both `GOOGLE_REDIRECT_URI` and `GOOGLE_CALLBACK_URL`
+  on Render to `https://YOUR-VERCEL-DOMAIN/api/google/callback` and register
+  that exact URL in the Google OAuth client. The two variables must match.
+- For Telegram, set `TELEGRAM_WEBHOOK_URL` on Render to
+  `https://YOUR-VERCEL-DOMAIN/api/telegram/webhook`.
+- Configure the Clerk application for the Vercel public domain. Sign-in takes
+  place on Vercel, and API calls reach Render with the user's session.
+
+If you use a custom domain, use it as the public URL consistently and update
+the corresponding Clerk, Google, and Telegram settings. Redeploy after
+changing environment variables or `vercel.json`.
+
+### 5. Configure MongoDB Atlas
+
+Create an Atlas database user restricted to the application database, then
+copy the Atlas `mongodb+srv://` connection string into Render's `MONGO_URI`
+and set `MONGO_DB_NAME` to the database name in that URI. In Atlas **Network
+Access**, allow the Render service's outbound IP addresses when available. Avoid
+`0.0.0.0/0` unless necessary; it allows connections from any IP and should
+only be used with a strong, least-privilege database user. MongoDB stores
+integration state and short-lived approvals, not the planner tasks.
+
+### Deployment checks and limitations
+
+1. Sign in at the Vercel production domain using a verified Clerk email listed
+   in Render's `ALLOWED_EMAILS`.
+2. Confirm the dashboard loads its planner data and try one normal API-backed
+   action. Check Render logs if API calls fail; the API executes there.
+3. If a write returns a same-origin `403`, inspect how the proxy forwards the
+   original host headers. Do not remove the origin checks to make the request
+   pass.
+4. If using MongoDB-backed features, verify Atlas network access and the two
+   MongoDB variables on Render.
+
+Both providers build the same Next.js code, and the application middleware
+runs on both deployments. The rewrite keeps browser API calls on the Vercel
+origin, while Render remains directly reachable at its own service URL. This
+setup is convenient for a single repository, but it is not an independent
+frontend/backend split; a separate backend would require a dedicated API
+architecture and corresponding authentication/origin changes.
+
+Do **not** upload `.env.local`, commit credentials, or expose server secrets
+with a `NEXT_PUBLIC_` prefix. `.env.example` contains variable names and
+placeholders, not values to copy into production.
 
 ## Security notes
 
