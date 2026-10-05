@@ -122,6 +122,30 @@ test("includes all 224 planner records in Gemini task context", async () => {
   assert.equal(planner.taskDetailsWereLimited, undefined);
 });
 
+test("does not instruct the assistant to invent durations or priorities", async () => {
+  let requestBody = "";
+  globalThis.fetch = async (_input, init) => {
+    requestBody = String(init?.body ?? "");
+    return Response.json({ candidates: [{ content: { parts: [{ text: "Use only recorded task details." }] } }] });
+  };
+
+  await getPlannerAssistantAnswer("ask", "Recommend my next tasks.", [
+    { ...task, estimatedHours: undefined, priority: "Unassigned" },
+  ]);
+
+  const payload = JSON.parse(requestBody) as {
+    system_instruction: { parts: Array<{ text: string }> };
+    contents: Array<{ parts: Array<{ text: string }> }>;
+  };
+  const systemPrompt = payload.system_instruction.parts[0].text;
+  const plannerContext = payload.contents[0].parts[0].text;
+  assert.match(systemPrompt, /Never invent a duration/);
+  assert.match(systemPrompt, /only when an estimate is explicitly recorded/);
+  assert.doesNotMatch(systemPrompt, /Faith and daily prayer times take precedence/);
+  assert.match(plannerContext, /"estimatedHours":null/);
+  assert.match(plannerContext, /"priority":"Unassigned"/);
+});
+
 test("reports temporary high demand when all models are unavailable", async () => {
   let requestCount = 0;
   globalThis.fetch = async () => {
@@ -518,6 +542,7 @@ test("analyzes complete workload metrics and discloses missing time-entry histor
   assert.match(bodyText, /overdueMoreThanSevenDays/);
   assert.match(bodyText, /recordedActualHours/);
   assert.match(bodyText, /weeklyActualHoursAvailable/);
+  assert.match(bodyText, /report that exact total, including 0 when none are recorded/);
   assert.match(bodyText, /byArea/);
   assert.match(bodyText, /byCourse/);
   const contents = request.contents as Array<{ parts: Array<{ text: string }> }>;
