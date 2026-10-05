@@ -41,6 +41,7 @@ import {
 } from "@/components/dashboard-charts";
 import { PlannerAssistant } from "@/components/planner-assistant";
 import { AIRecommendationsPanel, NextBestActionPanel } from "@/components/dashboard-insights";
+import { DailyBriefingPanel } from "@/components/daily-briefing";
 import { RecentActivityTimeline } from "@/components/recent-activity-timeline";
 import { MetricsGrid } from "@/components/dashboard-metrics";
 import { ProviderIntegrations } from "@/components/provider-integrations";
@@ -1048,7 +1049,15 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          <NextBestActionPanel disabled={state !== "ready"} refreshKey={dashboardRefreshKey} />
+          <NextBestActionPanel
+            disabled={state !== "ready"}
+            refreshKey={dashboardRefreshKey}
+            onComplete={async (taskId) => {
+              const task = tasks.find((item) => item.id === taskId);
+              if (task) await handleTaskComplete(task);
+            }}
+          />
+          <DailyBriefingPanel refreshKey={dashboardRefreshKey} />
 
           <section className="panel google-workspace-panel" aria-labelledby="google-workspace-title">
             <div className="panel-heading google-workspace-heading">

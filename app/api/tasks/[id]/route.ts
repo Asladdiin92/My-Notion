@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { hasPlannerAccess } from "@/lib/access";
 import { archiveNotionTask, setNotionTaskCompleted, updateNotionTask } from "@/lib/notion";
 import { logActivity } from "@/lib/activity-logger";
+import { invalidateRecommendationForTask } from "@/lib/ai-recommendations";
 import { isSameOrigin, parseTaskInput } from "@/lib/task-request";
 
 export const dynamic = "force-dynamic";
@@ -27,10 +28,19 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 
   const parsed = await parseTaskInput(request);
   if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 });
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ ok: false, error: "Sign in before modifying this planner." }, { status: 401 });
 
   try {
     const { id } = await params;
     const task = await updateNotionTask(id, parsed.input);
+    try {
+      await invalidateRecommendationForTask(userId, task.id);
+    } catch (error) {
+      console.error("Could not invalidate the related recommendation.", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+    }
     return NextResponse.json({ ok: true, task }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not update the planner item.";
@@ -45,10 +55,19 @@ export async function DELETE(request: Request, { params }: RouteContext) {
   if (!isSameOrigin(request)) {
     return NextResponse.json({ ok: false, error: "This request must come from the dashboard." }, { status: 403 });
   }
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ ok: false, error: "Sign in before modifying this planner." }, { status: 401 });
 
   try {
     const { id } = await params;
     await archiveNotionTask(id);
+    try {
+      await invalidateRecommendationForTask(userId, id);
+    } catch (error) {
+      console.error("Could not invalidate the related recommendation.", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+    }
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not archive the planner item.";
@@ -76,6 +95,15 @@ export async function POST(request: Request, { params }: RouteContext) {
     const { id } = await params;
     const completed = (body as { completed: boolean }).completed;
     const task = await setNotionTaskCompleted(id, completed);
+    if (completed) {
+      try {
+        await invalidateRecommendationForTask(userId, task.id);
+      } catch (error) {
+        console.error("Could not invalidate the related recommendation.", {
+          errorName: error instanceof Error ? error.name : "UnknownError",
+        });
+      }
+    }
     if (completed) {
       await logActivity({
         userId,
