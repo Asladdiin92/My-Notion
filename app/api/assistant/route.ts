@@ -1,5 +1,7 @@
+import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { hasPlannerAccess } from "@/lib/access";
+import { logActivity } from "@/lib/activity-logger";
 import {
   type DayPlanPreferences,
   getPlannerAssistantAnswer,
@@ -54,6 +56,13 @@ export async function POST(request: Request) {
   if (!await hasPlannerAccess()) {
     return NextResponse.json({ error: "You are not authorized to use this planner." }, {
       status: 403,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ error: "Sign in before using the planner assistant." }, {
+      status: 401,
       headers: { "Cache-Control": "no-store" },
     });
   }
@@ -232,6 +241,16 @@ export async function POST(request: Request) {
         prayerData.times,
       );
       const plan = await getPlannerAssistantDayPlan(tasks, values.date as string, values.timezone as string, prayerTimes, dayPreferences);
+      await logActivity({
+        userId,
+        type: "ai_plan_generated",
+        source: "ai",
+        title: "Generated a daily plan",
+        entityType: "day_plan",
+        entityId: values.date as string,
+        metadata: { date: values.date, blockCount: plan.blocks.length },
+        idempotencyKey: `daily-plan:${values.date}:${JSON.stringify(plan)}`,
+      });
       return NextResponse.json({ plan }, { headers: { "Cache-Control": "no-store" } });
     }
     if (values.mode === "research") {

@@ -3,12 +3,8 @@
 import { useUser, UserButton } from "@clerk/nextjs";
 import {
   AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
   BookOpen,
-  BriefcaseBusiness,
   CalendarDays,
-  CalendarClock,
   Check,
   CheckCheck,
   ChevronLeft,
@@ -25,7 +21,6 @@ import {
   LoaderCircle,
   LucideIcon,
   Menu,
-  Mail,
   Pencil,
   Plus,
   RefreshCw,
@@ -45,7 +40,10 @@ import {
   TypeChart,
 } from "@/components/dashboard-charts";
 import { PlannerAssistant } from "@/components/planner-assistant";
-import { AIRecommendationsPanel, NextBestActionPanel, RecentActivityPanel } from "@/components/dashboard-insights";
+import { AIRecommendationsPanel, NextBestActionPanel } from "@/components/dashboard-insights";
+import { DailyBriefingPanel } from "@/components/daily-briefing";
+import { RecentActivityTimeline } from "@/components/recent-activity-timeline";
+import { MetricsGrid } from "@/components/dashboard-metrics";
 import { ProviderIntegrations } from "@/components/provider-integrations";
 import type { Task, TaskOptions, TasksResponse } from "@/lib/types";
 import type { GoogleWorkspaceSummary } from "@/lib/google-types";
@@ -205,30 +203,6 @@ function Sidebar({
         <div className="profile-row"><span className="profile-avatar">A</span><span><strong>Asladin</strong><small>Personal workspace</small></span><Sparkles size={15} className="profile-sparkle" /></div>
       </div>
     </aside>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  note,
-  icon: Icon,
-  tone,
-  trend,
-}: {
-  label: string;
-  value: number | string;
-  note: string;
-  icon: LucideIcon;
-  tone: string;
-  trend?: "up" | "down";
-}) {
-  return (
-    <article className="metric-card">
-      <div className="metric-head"><span>{label}</span><span className={`metric-icon ${tone}`}><Icon size={16} strokeWidth={1.9} /></span></div>
-      <div className="metric-value-row"><strong className="metric-value">{value}</strong>{trend && <span className="metric-trend">{trend === "up" ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}{note}</span>}</div>
-      {!trend && <div className="metric-note">{note}</div>}
-    </article>
   );
 }
 
@@ -706,6 +680,7 @@ export default function DashboardPage() {
   const [search, setSearch] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
+  const [activityRefreshKey, setActivityRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [requestDayPlan, setRequestDayPlan] = useState(false);
@@ -749,6 +724,7 @@ export default function DashboardPage() {
     if (!dashboardTabs.includes(target)) return;
     window.history.replaceState(null, "", `#${target}`);
     setActiveTab(target);
+    if (target === "overview") setActivityRefreshKey((current) => current + 1);
     setSidebarOpen(false);
   }, []);
 
@@ -829,6 +805,7 @@ export default function DashboardPage() {
   }, [notify]);
 
   function handleTaskSaved(task: Task) {
+    setActivityRefreshKey((current) => current + 1);
     setTasks((current) => editingTask
       ? current.map((currentTask) => currentTask.id === task.id ? task : currentTask)
       : [task, ...current]);
@@ -841,6 +818,7 @@ export default function DashboardPage() {
   }
 
   function handleAssistantTaskSaved(task: Task) {
+    setActivityRefreshKey((current) => current + 1);
     setTasks((current) => current.some((item) => item.id === task.id)
       ? current.map((item) => item.id === task.id ? task : item)
       : [task, ...current]);
@@ -898,6 +876,7 @@ export default function DashboardPage() {
         throw new Error(result.error ?? "Could not update task completion.");
       }
       setTasks((current) => current.map((item) => item.id === task.id ? result.task! : item));
+      setActivityRefreshKey((current) => current + 1);
       setLastUpdated(new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: PLANNER_TIME_ZONE }).format(new Date()));
       setSuccessMessage(`“${task.title}” marked ${result.task.completed ? "complete" : "not complete"}.`);
       notify(`“${task.title}” marked ${result.task.completed ? "complete" : "not complete"}.`);
@@ -1070,7 +1049,15 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          <NextBestActionPanel disabled={state !== "ready"} refreshKey={dashboardRefreshKey} />
+          <NextBestActionPanel
+            disabled={state !== "ready"}
+            refreshKey={dashboardRefreshKey}
+            onComplete={async (taskId) => {
+              const task = tasks.find((item) => item.id === taskId);
+              if (task) await handleTaskComplete(task);
+            }}
+          />
+          <DailyBriefingPanel refreshKey={dashboardRefreshKey} />
 
           <section className="panel google-workspace-panel" aria-labelledby="google-workspace-title">
             <div className="panel-heading google-workspace-heading">
@@ -1100,15 +1087,19 @@ export default function DashboardPage() {
           {successMessage && <div className="success-banner" role="status"><Check size={15} /><span>{successMessage}</span><button onClick={() => setSuccessMessage("")} aria-label="Dismiss">×</button></div>}
           {actionError && <div className="connection-banner" role="alert"><span className="banner-icon"><AlertTriangle size={16} /></span><div><strong>Could not update the planner</strong><p>{actionError}</p></div><button onClick={() => setActionError("")}>Dismiss</button></div>}
 
-          <section className="metrics-grid" aria-label="Task overview">
-            <MetricCard label="Tasks Today" value={state === "ready" ? myDayTaskCount : "—"} note="Due, recurring, or overdue" icon={ListChecks} tone="tone-green" />
-            <MetricCard label="Unread Emails" value={googleSummary.connected ? googleSummary.unreadEmails : "—"} note={googleSummary.connected ? "In your Gmail inbox" : "Connect Google to view"} icon={Mail} tone="tone-blue" />
-            <MetricCard label="Meetings" value={googleSummary.connected ? meetingsToday : "—"} note={googleSummary.connected ? "On your calendar today" : "Connect Google to view"} icon={CalendarClock} tone="tone-violet" />
-            <MetricCard label="Project Areas" value={state === "ready" ? areaData.length : "—"} note="Distinct Notion areas" icon={BriefcaseBusiness} tone="tone-amber" />
-          </section>
+          <MetricsGrid
+            tasks={tasks}
+            tasksReady={state === "ready"}
+            tasksError={state === "error" ? error : undefined}
+            refreshKey={dashboardRefreshKey}
+            timeZone={PLANNER_TIME_ZONE}
+          />
 
           <section className="dashboard-insights-grid" aria-label="Recent activity and AI recommendations">
-            <RecentActivityPanel tasks={tasks} loading={state === "loading"} />
+            <RecentActivityTimeline
+              refreshKey={`${dashboardRefreshKey}:${activityRefreshKey}`}
+              onNavigate={selectTab}
+            />
             <AIRecommendationsPanel
               disabled={state !== "ready" || !googleSummaryLoaded}
               googleConnected={googleSummary.connected}

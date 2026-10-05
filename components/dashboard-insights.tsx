@@ -5,8 +5,9 @@ import {
   ArrowUpRight,
   CalendarClock,
   Check,
-  Circle,
+  CheckCheck,
   Clock3,
+  EyeOff,
   ExternalLink,
   LoaderCircle,
   type LucideIcon,
@@ -14,10 +15,9 @@ import {
   Sparkles,
   Target,
 } from "lucide-react";
-import { formatPlannerDate, plannerDateKey, todayInPlannerTimeZone, PLANNER_TIME_ZONE } from "@/lib/planner-datetime";
+import { formatPlannerDate, PLANNER_TIME_ZONE } from "@/lib/planner-datetime";
 import { apiErrorMessage, readApiResponse } from "@/lib/api-response";
 import type { FocusWindow, NextActionCandidate, NextActionSelection } from "@/lib/next-action";
-import type { Task } from "@/lib/types";
 
 type Recommendation = {
   id: string;
@@ -31,7 +31,13 @@ type Recommendation = {
 
 type NextActionResponse = NextActionSelection & {
   explanation?: { reason: string; firstStep: string };
+  explanationSource?: "ai" | "fallback";
+  score?: number;
+  priorityLabel?: "Critical" | "Important" | "Normal" | "Can wait";
+  factors?: Array<{ key: string; points: number; evidence: string }>;
+  recommendationId?: string;
   calendarConnected: boolean;
+  calendarAvailable?: boolean;
   currentLocalTime?: string;
   error?: string;
 };
@@ -55,10 +61,20 @@ function focusWindowLabel(window: FocusWindow): string {
   return `${date}, ${window.startTime}–${window.endTime}`;
 }
 
-export function NextBestActionPanel({ disabled, refreshKey }: { disabled: boolean; refreshKey: number }) {
+export function NextBestActionPanel({
+  disabled,
+  refreshKey,
+  onComplete,
+}: {
+  disabled: boolean;
+  refreshKey: number;
+  onComplete: (taskId: string) => Promise<void>;
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<NextActionResponse | null>(null);
+  const [dismissing, setDismissing] = useState(false);
+  const [completing, setCompleting] = useState(false);
   const requestController = useRef<AbortController | null>(null);
   const lastAutomaticRequest = useRef<number | null>(null);
 
@@ -77,7 +93,9 @@ export function NextBestActionPanel({ disabled, refreshKey }: { disabled: boolea
       });
       const payload = await readApiResponse<NextActionResponse>(response);
       if (!response.ok) throw new Error(payload.error ?? "Could not get a next-action recommendation.");
-      if (payload.candidate && (!payload.focusWindow || !payload.explanation?.reason || !payload.explanation.firstStep)) {
+      if (payload.candidate && (!payload.explanation?.reason || !payload.explanation.firstStep ||
+          !Number.isSafeInteger(payload.score) || !payload.priorityLabel ||
+          !payload.recommendationId || !Array.isArray(payload.factors))) {
         throw new Error("The server returned an incomplete recommendation. Please try again.");
       }
       setResult(payload);
@@ -105,19 +123,52 @@ export function NextBestActionPanel({ disabled, refreshKey }: { disabled: boolea
   const validDueDate = Boolean(dueDate && !Number.isNaN(new Date(dueDate).getTime()));
   const safeUrl = candidate ? safeTaskUrl(candidate.url) : undefined;
 
+  const dismiss = async () => {
+    if (!result?.recommendationId || dismissing) return;
+    setDismissing(true);
+    setError("");
+    try {
+      const response = await fetch("/api/assistant/next-action", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "dismiss", recommendationId: result.recommendationId }),
+        cache: "no-store",
+      });
+      const payload = await readApiResponse<{ error?: string }>(response);
+      if (!response.ok) throw new Error(payload.error ?? "Could not dismiss this recommendation.");
+      await requestRecommendation();
+    } catch (dismissError) {
+      setError(apiErrorMessage(dismissError, "Could not dismiss this recommendation."));
+    } finally {
+      setDismissing(false);
+    }
+  };
+
+  const complete = async () => {
+    if (!candidate || completing || disabled) return;
+    if (!window.confirm(`Mark “${candidate.title}” as completed in Notion?`)) return;
+    setCompleting(true);
+    try {
+      await onComplete(candidate.id);
+      await requestRecommendation();
+    } finally {
+      setCompleting(false);
+    }
+  };
+
   return (
     <section className="panel next-action-panel" aria-labelledby="next-action-title">
       <div className="panel-heading next-action-heading">
         <div>
           <span className="insight-eyebrow">ON-DEMAND · APPROVAL ONLY</span>
           <h2 id="next-action-title">Next best action</h2>
-          <p>Ranks incomplete planner items against the next available 08:30–18:00 Addis Ababa focus window.</p>
+          <p>Deterministic 0–100 task scoring; AI is used only to explain the result.</p>
         </div>
         <span className="chart-heading-icon tone-green"><Target size={15} /></span>
       </div>
       {!result && !error && (
         <div className="next-action-intro">
-          <p>{loading ? "Checking your planner with AI…" : "AI checks your planner when this page opens and after each dashboard refresh. Nothing is changed in Notion."}</p>
+          <p>{loading ? "Scoring your current planner tasks…" : "Scores use recorded urgency, priority, status, task age, and effort only. Nothing changes in Notion without your confirmation."}</p>
           <button type="button" className="next-action-run" onClick={() => void requestRecommendation()} disabled={disabled || loading}>
             {loading ? <><LoaderCircle size={13} className="spin" /> Checking your planner…</> : <><Sparkles size={13} /> Recommend my next action</>}
           </button>
@@ -126,7 +177,7 @@ export function NextBestActionPanel({ disabled, refreshKey }: { disabled: boolea
       {error && <div className="next-action-error" role="alert"><p>{error}</p><button type="button" onClick={() => void requestRecommendation()} disabled={disabled || loading}>Try again</button></div>}
       {result && !candidate && <div className="next-action-empty" role="status"><p>{result.message ?? "No incomplete planner item is available to recommend."}</p>
         <button type="button" className="next-action-run" onClick={() => void requestRecommendation()} disabled={disabled || loading}>Check again</button></div>}
-      {result && candidate && result.focusWindow && result.explanation && (
+      {result && candidate && result.explanation && (
         <div className="next-action-result" aria-live="polite">
           {result.currentLocalTime && <p className="next-action-checked">Checked {result.currentLocalTime}</p>}
           <div className="next-action-task">
@@ -134,102 +185,42 @@ export function NextBestActionPanel({ disabled, refreshKey }: { disabled: boolea
             {safeUrl && <a href={safeUrl} target="_blank" rel="noreferrer" aria-label={`Open ${candidate.title} in Notion`}><ExternalLink size={13} /></a>}
           </div>
           <div className="next-action-facts">
+            <span className={`next-action-score score-${result.priorityLabel?.toLowerCase().replaceAll(" ", "-")}`}>
+              {result.score}/100 · {result.priorityLabel}
+            </span>
             <span className={`next-action-deadline deadline-${candidate.dueLabel.toLowerCase().replaceAll(" ", "-")}`}>{candidate.dueLabel}{validDueDate ? ` · ${formatPlannerDate(dueDate!)}` : ""}</span>
             <span>{candidate.priority} priority</span>
             <span>{candidate.estimatedMinutes === null ? "No duration estimate recorded" : `Notion estimate · ${candidate.estimatedMinutes} min`}</span>
+            {candidate.area && <span>Area · {candidate.area}</span>}
           </div>
-          <p className="next-action-window"><Clock3 size={12} /> Focus window: {focusWindowLabel(result.focusWindow)} ({result.focusWindow.availableMinutes} min available)</p>
+          {result.focusWindow && <p className="next-action-window"><Clock3 size={12} /> Focus window: {focusWindowLabel(result.focusWindow)} ({result.focusWindow.availableMinutes} min available)</p>}
           {!result.calendarConnected && <p className="next-action-calendar-note">Google Calendar isn&apos;t connected, so meeting conflicts could not be checked.</p>}
-          {result.calendarConnected && <p className="next-action-calendar-note">{result.focusWindow.nextEventStart
+          {result.calendarConnected && !result.calendarAvailable && <p className="next-action-calendar-note">Calendar data was unavailable; meeting conflicts were not checked.</p>}
+          {result.calendarConnected && result.calendarAvailable && result.focusWindow && <p className="next-action-calendar-note">{result.focusWindow.nextEventStart
             ? `Free time ends at ${result.focusWindow.nextEventStart} for your next calendar event.`
             : "Calendar checked; no meeting conflicts fall within this focus window."}</p>}
-          {result.explanation.reason && <div className="next-action-reason"><strong>Why this task</strong><p>{result.explanation.reason}</p></div>}
+          {result.explanation.reason && <div className="next-action-reason"><strong>Why this task · {result.explanationSource === "fallback" ? "template" : "AI explanation"}</strong><p>{result.explanation.reason}</p></div>}
+          <div className="next-action-factors">
+            <strong>Score factors</strong>
+            {result.factors?.map((factor) => (
+              <span key={factor.key}><b>{factor.points > 0 ? `+${factor.points}` : "0"}</b> {factor.evidence}</span>
+            ))}
+          </div>
           <div className="next-action-first-step"><strong>First step</strong><p>{result.explanation.firstStep}</p></div>
           {candidate.nextAction && <p className="next-action-recorded">Recorded next action: {candidate.nextAction}</p>}
-          <button type="button" className="next-action-rerun" onClick={() => void requestRecommendation()} disabled={disabled || loading}>
-            {loading ? <LoaderCircle size={12} className="spin" /> : <Sparkles size={12} />} Recheck priorities
-          </button>
+          <div className="next-action-actions">
+            <button type="button" className="next-action-rerun" onClick={() => void requestRecommendation()} disabled={disabled || loading || dismissing || completing}>
+              {loading ? <LoaderCircle size={12} className="spin" /> : <Sparkles size={12} />} Recheck priorities
+            </button>
+            <button type="button" className="next-action-dismiss" onClick={() => void dismiss()} disabled={disabled || loading || dismissing || completing}>
+              {dismissing ? <LoaderCircle size={12} className="spin" /> : <EyeOff size={12} />} Dismiss
+            </button>
+            <button type="button" className="next-action-complete" onClick={() => void complete()} disabled={disabled || loading || dismissing || completing}>
+              {completing ? <LoaderCircle size={12} className="spin" /> : <CheckCheck size={12} />} Mark completed
+            </button>
+          </div>
         </div>
       )}
-    </section>
-  );
-}
-
-function activityDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Date unavailable";
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: PLANNER_TIME_ZONE,
-  }).format(date);
-}
-
-export function RecentActivityPanel({ tasks, loading }: { tasks: Task[]; loading: boolean }) {
-  const activities = tasks
-    .map((task) => {
-      const created = new Date(task.createdAt).getTime();
-      const updated = new Date(task.updatedAt || task.createdAt).getTime();
-      const hasUpdate = Number.isFinite(updated) && Number.isFinite(created) && updated > created + 60_000;
-      return {
-        task,
-        timestamp: hasUpdate ? task.updatedAt || task.createdAt : task.createdAt,
-        action: hasUpdate ? "Planner item updated" : "Added to your planner",
-      };
-    })
-    .filter(({ timestamp }) => Number.isFinite(new Date(timestamp).getTime()))
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice(0, 5);
-  const today = todayInPlannerTimeZone();
-
-  return (
-    <section className="panel activity-panel" aria-labelledby="recent-activity-title">
-      <div className="insight-heading">
-        <div>
-          <span className="insight-eyebrow">YOUR WORKSPACE</span>
-          <h2 id="recent-activity-title">Recent activity</h2>
-          <p>Latest additions and edits recorded in your Notion planner.</p>
-        </div>
-        <span className="insight-heading-icon activity-heading-icon"><Clock3 size={17} /></span>
-      </div>
-      {activities.length > 0 ? (
-        <ol className="activity-list">
-          {activities.map(({ task, timestamp, action }) => {
-            const dueDate = task.dateEnd || task.dueDate;
-            const status = task.completed
-              ? { label: "Completed", tone: "activity-status-complete" }
-              : dueDate && plannerDateKey(dueDate) < today
-                ? { label: "Overdue", tone: "activity-status-overdue" }
-                : { label: task.status || "In progress", tone: "activity-status-open" };
-            return (
-              <li className="activity-item" key={task.id}>
-                <span className={`activity-check${task.completed ? " is-complete" : ""}`}>
-                  {task.completed ? <Check size={14} strokeWidth={2.5} /> : <Circle size={13} strokeWidth={2} />}
-                </span>
-                <div className="activity-copy">
-                  <strong>{task.title}</strong>
-                  <span>{action}{task.area && task.area !== "Unassigned" ? ` · ${task.area}` : ""}</span>
-                </div>
-                <time dateTime={timestamp}>{activityDate(timestamp)}</time>
-                <span className={`activity-status ${status.tone}`}>{status.label}</span>
-              </li>
-            );
-          })}
-        </ol>
-      ) : loading ? (
-        <div className="activity-empty">
-          <LoaderCircle size={15} className="spin" />
-          <p>Loading recent planner activity…</p>
-        </div>
-      ) : (
-        <div className="activity-empty">
-          <span className="activity-check"><Circle size={13} /></span>
-          <p>Planner activity will appear here when items are added or updated.</p>
-        </div>
-      )}
-      <p className="activity-footnote">This feed reflects planner timestamps; it isn&apos;t a complete record of activity outside Notion.</p>
     </section>
   );
 }

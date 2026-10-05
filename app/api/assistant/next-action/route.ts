@@ -1,34 +1,90 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  dismissRecommendation,
+  getCurrentRecommendation,
+  getDismissedRecommendationTaskIds,
+  invalidateStaleRecommendations,
+  storeRecommendation,
+} from "@/lib/ai-recommendations";
 import { hasPlannerAccess } from "@/lib/access";
-import { apiErrorMessage } from "@/lib/api-response";
 import { explainNextAction } from "@/lib/gemini";
 import { fetchGoogleCalendarEvents, readGoogleSession } from "@/lib/google-workspace";
 import { PLANNER_TIME_ZONE } from "@/lib/planner-datetime";
-import { selectNextAction } from "@/lib/next-action";
+import { getNextFocusWindow, type NextActionCandidate } from "@/lib/next-action";
+import {
+  explainScoredTask,
+  rankTasks,
+  taskRecommendationFingerprint,
+  type ScoredTask,
+} from "@/lib/task-scoring";
 import { fetchNotionTasks } from "@/lib/notion";
 import { isSameOrigin } from "@/lib/task-request";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function POST(request: NextRequest) {
+function taskCandidate(scored: ScoredTask): NextActionCandidate {
+  const task = scored.task;
+  const deadline = scored.factors.find((factor) => factor.key === "deadline")?.evidence;
+  const hasDeadline = deadline !== "No deadline recorded" && deadline !== "Deadline is unavailable or invalid";
+  return {
+    id: task.id,
+    url: task.url,
+    title: task.title,
+    priority: task.priority || "Unassigned",
+    area: task.area || "",
+    dueDate: hasDeadline ? task.dateEnd || task.dueDate : null,
+    dueLabel: deadline === "Overdue" ? "Overdue"
+      : deadline === "Due today" ? "Due today"
+        : hasDeadline ? "Upcoming" : "No deadline",
+    estimatedMinutes: Number.isFinite(task.estimatedHours) && (task.estimatedHours ?? 0) > 0
+      ? Math.ceil(task.estimatedHours! * 60)
+      : null,
+    nextAction: task.nextAction || "",
+  };
+}
+
+function safeErrorResponse(error: unknown) {
+  console.error("Next-action recommendation failed.", {
+    errorName: error instanceof Error ? error.name : "UnknownError",
+  });
+  return NextResponse.json(
+    { error: "Could not prepare your next-action recommendation. Please try again." },
+    { status: 503, headers: { "Cache-Control": "no-store" } },
+  );
+}
+
+async function authorizedUser(request: NextRequest): Promise<string | NextResponse> {
   if (!await hasPlannerAccess()) {
     return NextResponse.json({ error: "You are not authorized to use this planner." }, { status: 403 });
   }
   if (!isSameOrigin(request)) {
     return NextResponse.json({ error: "This request must come from the dashboard." }, { status: 403 });
   }
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ error: "Sign in before using recommendations." }, { status: 401 });
+  return userId;
+}
+
+export async function POST(request: NextRequest) {
+  const userId = await authorizedUser(request);
+  if (userId instanceof NextResponse) return userId;
 
   try {
     const now = new Date();
-    const { userId } = await auth();
-    const session = userId ? readGoogleSession(request, userId) : null;
-    const [tasks, events] = await Promise.all([
+    const session = readGoogleSession(request, userId);
+    const [tasks, eventsResult] = await Promise.all([
       fetchNotionTasks(),
-      session ? fetchGoogleCalendarEvents(session, now) : Promise.resolve([]),
+      session ? fetchGoogleCalendarEvents(session, now).then(
+        (events) => ({ events, available: true }),
+        () => ({ events: [], available: false }),
+      ) : Promise.resolve({ events: [], available: false }),
     ]);
-    const selection = selectNextAction(tasks, now, PLANNER_TIME_ZONE, events);
+    await invalidateStaleRecommendations(userId, tasks, now);
+    const dismissed = await getDismissedRecommendationTaskIds(userId);
+    const ranked = rankTasks(tasks, dismissed, now, PLANNER_TIME_ZONE);
+    const focusWindow = getNextFocusWindow(now, PLANNER_TIME_ZONE, eventsResult.events);
     const currentLocalTime = new Intl.DateTimeFormat("en", {
       weekday: "long",
       year: "numeric",
@@ -39,25 +95,93 @@ export async function POST(request: NextRequest) {
       timeZone: PLANNER_TIME_ZONE,
       timeZoneName: "short",
     }).format(now);
-    if (!selection.candidate || !selection.focusWindow) {
+
+    for (const scored of ranked) {
+      const fingerprint = taskRecommendationFingerprint(scored.task);
+      const saved = await getCurrentRecommendation(userId, scored.task.id, fingerprint, now);
+      if (saved && saved.score === scored.score &&
+          JSON.stringify(saved.factors) === JSON.stringify(scored.factors)) {
+        return NextResponse.json({
+          candidate: taskCandidate(scored),
+          focusWindow,
+          explanation: saved.explanation,
+          explanationSource: saved.explanationSource,
+          score: saved.score,
+          priorityLabel: saved.label,
+          factors: saved.factors,
+          recommendationId: saved._id.toHexString(),
+          calendarConnected: Boolean(session),
+          calendarAvailable: eventsResult.available,
+          currentLocalTime,
+        }, { headers: { "Cache-Control": "no-store" } });
+      }
+
+      const candidate = taskCandidate(scored);
+      const result = await explainScoredTask(scored, async () => {
+        if (!focusWindow) throw new Error("No available focus window.");
+        return explainNextAction(candidate, focusWindow, currentLocalTime);
+      });
+      const record = await storeRecommendation(userId, {
+        taskId: scored.task.id,
+        taskFingerprint: fingerprint,
+        taskTitle: scored.task.title,
+        score: scored.score,
+        label: scored.label,
+        factors: scored.factors,
+        explanation: result.explanation,
+        explanationSource: result.source,
+        expiresAt: new Date(now.getTime() + 6 * 60 * 60 * 1000),
+      }, now);
+      if (!record || record.status !== "active") continue;
       return NextResponse.json({
-        ...selection,
+        candidate,
+        focusWindow,
+        explanation: record.explanation,
+        explanationSource: record.explanationSource,
+        score: record.score,
+        priorityLabel: record.label,
+        factors: record.factors,
+        recommendationId: record._id.toHexString(),
         calendarConnected: Boolean(session),
+        calendarAvailable: eventsResult.available,
         currentLocalTime,
       }, { headers: { "Cache-Control": "no-store" } });
     }
 
-    const explanation = await explainNextAction(selection.candidate, selection.focusWindow, currentLocalTime);
     return NextResponse.json({
-      ...selection,
-      explanation,
+      candidate: null,
+      focusWindow,
+      message: ranked.length
+        ? "The available recommendation was dismissed. Recheck to load another task."
+        : "There are no incomplete, non-dismissed planner tasks to recommend.",
       calendarConnected: Boolean(session),
+      calendarAvailable: eventsResult.available,
       currentLocalTime,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    const message = apiErrorMessage(error, "Could not prepare your next-action recommendation.");
-    const status = message.includes("Google session expired") ? 401
-      : message.startsWith("Add GEMINI_API_KEY") || message.startsWith("Add NOTION_") ? 503 : 502;
-    return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
+    return safeErrorResponse(error);
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const userId = await authorizedUser(request);
+  if (userId instanceof NextResponse) return userId;
+  try {
+    const body: unknown = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body) ||
+        (body as Record<string, unknown>).action !== "dismiss" ||
+        typeof (body as Record<string, unknown>).recommendationId !== "string") {
+      return NextResponse.json({ error: "Choose a valid recommendation to dismiss." }, { status: 400 });
+    }
+    const dismissed = await dismissRecommendation(
+      userId,
+      (body as { recommendationId: string }).recommendationId,
+    );
+    if (!dismissed) {
+      return NextResponse.json({ error: "This recommendation is no longer active." }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return safeErrorResponse(error);
   }
 }
