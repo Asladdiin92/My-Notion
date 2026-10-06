@@ -11,9 +11,14 @@ const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/models";
 const COACH_RULES = "Be concise and avoid fluffy introductions. Prioritize only from urgency and priority recorded in the supplied planner data. Never invent a duration, deadline, priority, task status, project importance, or next action. Include a duration only when an estimate is explicitly recorded for that task; otherwise omit it. Include an area only when one is recorded.";
 
 type GeminiResponse = {
-  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  candidates?: Array<{ content?: { role?: string; parts?: Array<{
+    text?: string;
+    functionCall?: { name?: string; args?: unknown };
+  }> } }>;
   error?: { message?: string };
 };
+
+export type GeminiContentResponse = GeminiResponse;
 
 type PlannerChangeFields = Partial<Record<
   "title" | "type" | "status" | "priority" | "area" | "course" | "dueDate" | "nextAction" | "recurrence",
@@ -82,7 +87,7 @@ export type DayPlanPreferences = {
   instructions: string;
 };
 
-async function generateGeminiText(body: string): Promise<string> {
+export async function generateGeminiContent(body: string): Promise<GeminiContentResponse> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("Add GEMINI_API_KEY to .env.local, then restart the dev server.");
@@ -109,7 +114,7 @@ async function generateGeminiText(body: string): Promise<string> {
       throw error;
     }
 
-    let result: GeminiResponse;
+    let result: GeminiContentResponse;
     try {
       result = await response.json() as GeminiResponse;
     } catch {
@@ -131,14 +136,19 @@ async function generateGeminiText(body: string): Promise<string> {
       }
       throw new Error(`Gemini request failed${result.error?.message ? `: ${result.error.message}` : ` (${response.status})`}.`);
     }
-    const answer = result.candidates?.[0]?.content?.parts
-      ?.map((part) => part.text ?? "")
-      .join("")
-      .trim();
-    if (!answer) throw new Error("Gemini returned no answer. Please try again.");
-    return answer;
+    return result;
   }
   throw new Error("All Gemini models are temporarily experiencing high demand. Please try again shortly.");
+}
+
+async function generateGeminiText(body: string): Promise<string> {
+  const result = await generateGeminiContent(body);
+  const answer = result.candidates?.[0]?.content?.parts
+    ?.map((part) => part.text ?? "")
+    .join("")
+    .trim();
+  if (!answer) throw new Error("Gemini returned no answer. Please try again.");
+  return answer;
 }
 
 export async function generateDailyBriefingText(input: {

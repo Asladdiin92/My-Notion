@@ -42,6 +42,24 @@ export function parseListTasksParameters(input: unknown): ListTasksParameters {
   return { status, limit };
 }
 
+export function parseListTasksArguments(input: unknown): ListTasksParameters {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("The list_tasks arguments must be an object.");
+  }
+  const values = input as Record<string, unknown>;
+  if (Object.hasOwn(values, "userId")) {
+    throw new Error("The list_tasks skill does not accept a userId.");
+  }
+  if (Object.keys(values).some((key) => !["status", "limit"].includes(key))) {
+    throw new Error("The list_tasks arguments contain an unsupported field.");
+  }
+  return parseListTasksParameters({
+    skill: "list_tasks",
+    ...(values.status !== undefined ? { status: values.status } : {}),
+    ...(values.limit !== undefined ? { limit: values.limit } : {}),
+  });
+}
+
 function toSafeTask(task: Task): SafeTask {
   return {
     id: task.id,

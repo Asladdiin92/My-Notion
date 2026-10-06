@@ -56,21 +56,22 @@ must still use the authenticated user's identity and existing access checks.
 The other collections are planned for later features and are not created
 until needed.
 
-Execute the task-list skill with an authenticated same-origin request:
+Ask ASLADIN to use the task-list skill with an authenticated same-origin
+request to `/api/ai/skills/execute`:
 
 ```json
 {
-  "skill": "list_tasks",
-  "status": "pending",
-  "limit": 20
+  "message": "What pending tasks should I focus on?"
 }
 ```
 
-`status` accepts `pending`, `completed`, or `all`; `limit` accepts 1–100.
-Both are optional and default to `pending` and 20. The response includes
-`status`, the skill identity, the returned task count, safe task fields, and
-the generation timestamp. The server resolves the stored handler name only
-through a fixed code-side allowlist and reuses the existing Notion task fetcher.
+Gemini can request `list_tasks` with optional `status` (`pending`,
+`completed`, or `all`) and `limit` (integer 1–100); they default to `pending`
+and 20. The response includes the normalized answer, `toolUsed`, and, when
+used, a safe task result with the count, approved task fields, and generation
+timestamp. The server resolves the stored handler name only through a fixed
+code-side allowlist and reuses the existing Notion task fetcher. The stored
+definition must explicitly set `approvedForAI: true`.
 
 ## Where credentials go
 

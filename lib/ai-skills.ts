@@ -13,6 +13,7 @@ export type AISkill = {
   description: string;
   instructions: string;
   enabled: boolean;
+  approvedForAI?: boolean;
   operationType?: "read" | "write";
   approvalRequired?: boolean;
   riskLevel?: "low" | "medium" | "high";
@@ -102,6 +103,7 @@ export function serializeAISkill(skill: AISkill) {
     description: skill.description,
     instructions: skill.instructions,
     enabled: skill.enabled,
+    ...(skill.approvedForAI !== undefined ? { approvedForAI: skill.approvedForAI } : {}),
     ...(skill.operationType !== undefined ? { operationType: skill.operationType } : {}),
     ...(skill.approvalRequired !== undefined ? { approvalRequired: skill.approvalRequired } : {}),
     ...(skill.riskLevel !== undefined ? { riskLevel: skill.riskLevel } : {}),
