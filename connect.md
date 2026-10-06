@@ -8,11 +8,53 @@ credentials belong, and what is already implemented.
 | Service | Status in this repository | What it does |
 | --- | --- | --- |
 | Notion | Implemented | Source of truth for planner tasks and notes. Server routes read and update the configured database. |
+| MongoDB Atlas | Implemented | Stores AI skills and integration state outside Notion; AI storage defaults to the configured MongoDB database. |
 | Google | Implemented | User-authorized Gmail, Calendar, and Drive access. Google data is loaded on demand; the assistant only uses it after an explicit request. |
 | Gemini | Implemented | Server-side AI provider for planner suggestions and other assistant actions. |
 | Tavily | Implemented | Server-side web search for the research assistant. |
 | GitHub | Implemented | GitHub App installation, repository/issue/PR browsing, review/check summaries, and approval-gated issue/comment/PR creation. |
 | Telegram | Implemented | Account linking, read-only planner commands, approval-gated Notion task create/edit, and optional counts-only dashboard refresh messages. |
+
+## ASLADIN AI persistence
+
+Gemini remains the server-side reasoning engine. AI-specific data is stored
+separately from the existing Notion planner:
+
+```dotenv
+MONGO_URI=mongodb+srv://...
+MONGO_DB_NAME=asladin-future-os
+# Optional override; omitted means the AI data uses MONGO_DB_NAME.
+AI_MONGO_DB_NAME=
+```
+
+The app uses `AI_MONGO_DB_NAME` when set, otherwise `MONGO_DB_NAME` (or
+`asladin-future-os` if neither is set). Existing Telegram, GitHub, activity,
+and recommendation storage continues using `MONGO_DB_NAME`, so the AI and
+integration collections share a database unless the AI override is set.
+Create a least-privilege Atlas database user and allow the app's deployment
+network in Atlas Network Access. Grant that user read/write access to each
+database the app uses.
+
+The planned AI data model uses these collections, created by MongoDB as each
+feature first inserts data:
+
+```text
+asladin-future-os
+├── ai_skills
+├── ai_preferences
+├── ai_feedback
+├── ai_action_proposals
+├── ai_action_logs
+└── ai_memories
+```
+
+The authenticated `GET /api/ai/skills` endpoint lists the signed-in user's
+skills and shared system skills, and `POST /api/ai/skills` saves one.
+MongoDB creates `ai_skills` on the first successful insert. The initial
+`list_tasks` system skill is a read-only handler definition; task retrieval
+must still use the authenticated user's identity and existing access checks.
+The other collections are planned for later features and are not created
+until needed.
 
 ## Where credentials go
 

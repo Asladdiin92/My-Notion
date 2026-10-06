@@ -8,14 +8,15 @@ create, edit, and archive planner items in the same database.
 This guide explains how the application works, what each part is for, and how
 to run, extend, and deploy it.
 
-Notion remains the source of truth for planner data. MongoDB stores only
-Telegram link/pairing state and short-lived one-time approvals for Telegram
-and GitHub writes; it does not duplicate planner items. Clerk handles
-authentication, the existing Notion
-People property supplies optional assignees, and AI plans stay temporary until
-their proposed tasks are confirmed. The application reads every database page
-through Notion pagination and maps optional columns only when the matching
-property exists. Missing optional columns are not fabricated or seeded.
+Notion remains the source of truth for planner data. MongoDB stores AI-specific
+skills and integration state, not planner items. AI data defaults to the
+database configured by `MONGO_DB_NAME` (`asladin-future-os` in the current
+setup); set `AI_MONGO_DB_NAME` only to override that. Clerk handles
+authentication, the existing Notion People property supplies optional
+assignees, and AI plans stay temporary until their proposed tasks are
+confirmed. The application reads every database page through Notion pagination
+and maps optional columns only when the matching property exists. Missing
+optional columns are not fabricated or seeded.
 
 ## Contents
 
@@ -98,14 +99,14 @@ the browser bundle or API response.
 | **Lucide React** | Supplies consistent icons for navigation, metrics, actions, and states. |
 | **Notion REST API** | Stores the real planner data and creates, updates, or archives pages in your database. This project calls it with the server's built-in `fetch`; it does not need the Notion SDK. |
 | **CSS** | Styles the responsive layout, charts, calendar, form, and phone/tablet views. |
-| **MongoDB** | Stores integration links, short-lived approval records, and webhook update IDs only; it is not the planner database. |
+| **MongoDB Atlas** | Stores AI skills and integration state; it is not the planner database. |
 | **GitHub App** | Reads installed repository issues/PRs/reviews/checks and runs confirmed issue/comment/PR actions. |
 | **Telegram Bot API** | Provides linked planner commands and optional counts-only refresh notifications. |
 | **Vercel** | Can host the Next.js app and supply production environment variables. |
 
 Dependencies and commands are recorded in `package.json` and
 `package-lock.json`. **Notion remains the planner database**; MongoDB stores
-only the integration metadata described above.
+AI-specific data and integration metadata separately.
 
 ## Connect GitHub and Telegram
 

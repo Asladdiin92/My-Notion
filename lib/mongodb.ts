@@ -1,7 +1,7 @@
 import "server-only";
 
 import { MongoClient, type Db } from "mongodb";
-import { mongoDatabaseName, validateMongoEnvironment } from "@/lib/mongo-config";
+import { aiMongoDatabaseName, mongoDatabaseName, validateMongoEnvironment } from "@/lib/mongo-config";
 
 export type MongoHealthStatus = "connected" | "disconnected" | "error";
 
@@ -17,9 +17,9 @@ const mongoGlobal = globalThis as MongoGlobal;
 export async function getMongoClient(): Promise<MongoClient> {
   validateMongoEnvironment();
   const uri = process.env.MONGO_URI?.trim();
-  if (!uri || !mongoDatabaseName()) {
+  if (!uri) {
     mongoGlobal.asladinMongoHealthStatus = "disconnected";
-    throw new Error("MongoDB is not configured. Set MONGO_URI and MONGO_DB_NAME.");
+    throw new Error("MongoDB is not configured. Set MONGO_URI.");
   }
   if (!mongoGlobal.asladinMongoClientPromise) {
     const client = new MongoClient(uri, {
@@ -43,21 +43,25 @@ export async function getMongoClient(): Promise<MongoClient> {
 
 export async function getMongoDb(): Promise<Db> {
   const name = mongoDatabaseName();
+  if (!name) throw new Error("MongoDB is not configured. Set MONGO_DB_NAME for integration storage.");
   const client = await getMongoClient();
-  if (!name) throw new Error("MongoDB is not configured. Set MONGO_URI and MONGO_DB_NAME.");
   return client.db(name);
+}
+
+export async function getAIDatabase(): Promise<Db> {
+  const client = await getMongoClient();
+  return client.db(aiMongoDatabaseName());
 }
 
 export async function getMongoHealthStatus(): Promise<MongoHealthStatus> {
   try {
-    const name = mongoDatabaseName();
-    if (!name) return "disconnected";
+    if (!process.env.MONGO_URI?.trim()) return "disconnected";
     const client = await getMongoClient();
-    await client.db(name).command({ ping: 1 });
+    await client.db(aiMongoDatabaseName()).command({ ping: 1 });
     mongoGlobal.asladinMongoHealthStatus = "connected";
     return "connected";
   } catch {
-    const configured = Boolean(process.env.MONGO_URI?.trim() && mongoDatabaseName());
+    const configured = Boolean(process.env.MONGO_URI?.trim());
     mongoGlobal.asladinMongoHealthStatus = configured ? "error" : "disconnected";
     return mongoGlobal.asladinMongoHealthStatus;
   }
