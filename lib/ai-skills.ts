@@ -73,6 +73,11 @@ export async function listAISkills(userId: string): Promise<AISkill[]> {
   return collection.find({ userId: { $in: [userId, "system"] } }).sort({ updatedAt: -1 }).limit(100).toArray();
 }
 
+export async function getSystemAISkill(name: string): Promise<AISkill | null> {
+  const collection = await skillsCollection();
+  return collection.findOne({ userId: "system", scope: "system", name });
+}
+
 export async function createAISkill(userId: string, skill: NewAISkill): Promise<AISkill> {
   const now = new Date();
   const record: AISkill = {

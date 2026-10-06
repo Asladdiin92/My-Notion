@@ -56,6 +56,22 @@ must still use the authenticated user's identity and existing access checks.
 The other collections are planned for later features and are not created
 until needed.
 
+Execute the task-list skill with an authenticated same-origin request:
+
+```json
+{
+  "skill": "list_tasks",
+  "status": "pending",
+  "limit": 20
+}
+```
+
+`status` accepts `pending`, `completed`, or `all`; `limit` accepts 1–100.
+Both are optional and default to `pending` and 20. The response includes
+`status`, the skill identity, the returned task count, safe task fields, and
+the generation timestamp. The server resolves the stored handler name only
+through a fixed code-side allowlist and reuses the existing Notion task fetcher.
+
 ## Where credentials go
 
 ### Local development
