@@ -12,7 +12,7 @@ function mockFile(name: string, contents: string | Uint8Array) {
   return {
     name,
     size: bytes.byteLength,
-    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    arrayBuffer: async () => Uint8Array.from(bytes).buffer,
   };
 }
 

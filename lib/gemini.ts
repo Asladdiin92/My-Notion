@@ -13,7 +13,7 @@ const COACH_RULES = "Be concise and avoid fluffy introductions. Prioritize only 
 type GeminiResponse = {
   candidates?: Array<{ content?: { role?: string; parts?: Array<{
     text?: string;
-    functionCall?: { name?: string; args?: unknown };
+    functionCall?: { name?: string; args?: unknown; id?: string };
   }> } }>;
   error?: { message?: string };
 };

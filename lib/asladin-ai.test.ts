@@ -77,6 +77,30 @@ test("returns validated normal Gemini text without a tool", async () => {
   assert.equal((request.tools as Array<{ functionDeclarations: Array<{ name: string }> }>)[0].functionDeclarations[0].name, "list_tasks");
 });
 
+test("sends only the stored summary and recent conversation messages as context", async () => {
+  const harness = dependencies([{ candidates: [{ content: { parts: [{ text: "Continuing." }] } }] }]);
+  const context = {
+    summary: "Earlier discussion summary",
+    messages: Array.from({ length: 20 }, (_, index) => ({
+      id: `message-${index}`,
+      role: index % 2 === 0 ? "user" as const : "assistant" as const,
+      content: `Message ${index}`,
+      createdAt: new Date(`2026-10-06T00:00:${String(index).padStart(2, "0")}.000Z`),
+    })),
+  };
+  await orchestrateAsladinAI("Current question", harness.deps, context);
+
+  const contents = harness.requestBodies[0].contents as Array<{
+    role: string;
+    parts: Array<{ text: string }>;
+  }>;
+  assert.equal(contents.length, 14);
+  assert.match(contents[0].parts[0].text, /Earlier discussion summary/);
+  assert.equal(contents[1].parts[0].text, "Message 8");
+  assert.equal(contents.at(-2)?.parts[0].text, "Message 19");
+  assert.equal(contents.at(-1)?.parts[0].text, "Current question");
+});
+
 test("executes only approved list_tasks and continues with a safe function result", async () => {
   const harness = dependencies([
     {

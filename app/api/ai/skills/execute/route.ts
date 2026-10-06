@@ -3,7 +3,13 @@ import { NextResponse } from "next/server";
 import { hasPlannerUserAccess } from "@/lib/access";
 import { orchestrateAsladinAI, type ApprovedListTasksSkill } from "@/lib/asladin-ai";
 import { getSystemAISkill } from "@/lib/ai-skills";
-import { recordAIConversation } from "@/lib/ai-conversations";
+import {
+  appendAIConversationTurn,
+  createAIConversation,
+  getAIConversationContext,
+  newAIConversationId,
+  validateConversationId,
+} from "@/lib/ai-conversations";
 import { executeSkillHandler, getSkillHandler } from "@/lib/ai-skill-handlers";
 import { generateGeminiContent } from "@/lib/gemini";
 import { isSameOrigin } from "@/lib/task-request";
@@ -29,19 +35,24 @@ async function generateAsladinContent(body: string) {
   }
 }
 
-function parseMessage(input: unknown): string {
+function parseAssistantRequest(input: unknown): { message: string; conversationId?: string } {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new Error("Send a JSON object containing a message.");
   }
   const values = input as Record<string, unknown>;
-  if (Object.keys(values).some((key) => key !== "message")) {
-    throw new Error("The assistant request contains an unsupported field.");
+  if (Object.keys(values).some((key) => !["message", "conversationId"].includes(key))) {
+    throw new Error("The assistant request contains unsupported fields.");
   }
   if (typeof values.message !== "string" || !values.message.trim() ||
       values.message.length > MAX_MESSAGE_LENGTH) {
     throw new Error(`Message must contain 1–${MAX_MESSAGE_LENGTH} characters.`);
   }
-  return values.message.trim();
+  return {
+    message: values.message.trim(),
+    ...(values.conversationId !== undefined
+      ? { conversationId: validateConversationId(values.conversationId) }
+      : {}),
+  };
 }
 
 async function getApprovedListTasksSkill(): Promise<ApprovedListTasksSkill | null> {
@@ -119,6 +130,8 @@ export async function POST(request: Request) {
   }
 
   let message: string;
+  let conversationId: string;
+  let isNewConversation: boolean;
   try {
     const body = await request.text();
     if (Buffer.byteLength(body, "utf8") > MAX_REQUEST_BYTES) {
@@ -127,7 +140,10 @@ export async function POST(request: Request) {
         headers: { "Cache-Control": "no-store" },
       });
     }
-    message = parseMessage(JSON.parse(body) as unknown);
+    const assistantRequest = parseAssistantRequest(JSON.parse(body) as unknown);
+    message = assistantRequest.message;
+    isNewConversation = assistantRequest.conversationId === undefined;
+    conversationId = assistantRequest.conversationId ?? newAIConversationId();
   } catch (error) {
     return NextResponse.json({
       error: error instanceof Error ? error.message : "Send a valid assistant request.",
@@ -138,6 +154,16 @@ export async function POST(request: Request) {
   }
 
   try {
+    let conversationContext = null;
+    if (!isNewConversation) {
+      conversationContext = await getAIConversationContext(userId, conversationId);
+      if (!conversationContext) {
+        return NextResponse.json({ error: "Conversation not found or archived." }, {
+          status: 404,
+          headers: { "Cache-Control": "no-store" },
+        });
+      }
+    }
     let result;
     try {
       result = await orchestrateAsladinAI(message, {
@@ -145,7 +171,7 @@ export async function POST(request: Request) {
         getApprovedSkill: getApprovedListTasksSkill,
         getHandlerName: (name) => getSkillHandler(name) ? name : undefined,
         executeHandler: executeSkillHandler,
-      });
+      }, conversationContext);
     } catch (error) {
       if (!(error instanceof GeminiUnavailableError)) throw error;
       result = {
@@ -155,13 +181,29 @@ export async function POST(request: Request) {
       };
     }
 
-    let conversationId: string;
     try {
-      conversationId = await recordAIConversation(userId, {
-        message,
-        answer: result.answer,
-        toolUsed: result.toolUsed,
-      });
+      const turn = {
+        userMessage: message,
+        assistantMessage: result.answer,
+        ...(result.toolCallId ? { toolCallId: result.toolCallId } : {}),
+      };
+      if (isNewConversation) {
+        await createAIConversation(userId, conversationId, {
+          ...turn,
+          ...(result.toolUsed ? { toolName: result.toolUsed } : {}),
+        });
+      } else {
+        const saved = await appendAIConversationTurn(userId, conversationId, {
+          ...turn,
+          ...(result.toolUsed ? { toolName: result.toolUsed } : {}),
+        });
+        if (!saved) {
+          return NextResponse.json({ error: "Conversation not found or archived." }, {
+            status: 404,
+            headers: { "Cache-Control": "no-store" },
+          });
+        }
+      }
     } catch (error) {
       console.error("ASLADIN AI conversation persistence failed.", {
         errorName: error instanceof Error ? error.name : "UnknownError",

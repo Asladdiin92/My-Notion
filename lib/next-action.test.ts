@@ -3,9 +3,9 @@ import test from "node:test";
 import { getNextFocusWindow, selectNextAction } from "./next-action";
 import type { Task } from "./types";
 
-const task = (values: Partial<Task> & Pick<Task, "id" | "title">): Task => ({
-  id: values.id,
-  title: values.title,
+const task = ({ id, title, ...values }: Partial<Task> & Pick<Task, "id" | "title">): Task => ({
+  id,
+  title,
   url: "https://www.notion.so/example",
   status: "Not started",
   priority: "Medium",

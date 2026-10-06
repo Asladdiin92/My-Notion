@@ -6,6 +6,7 @@ import {
   type ListTasksParameters,
   type SafeTask,
 } from "@/lib/ai-skill-handlers";
+import type { AIConversationContext } from "@/lib/ai-conversations";
 
 export const ASLADIN_AI_SYSTEM_INSTRUCTION = [
   "You are ASLADIN AI, a personal productivity assistant.",
@@ -59,10 +60,11 @@ export type AsladinAIResult = {
   status: "success" | "fallback";
   answer: string;
   toolUsed: "list_tasks" | null;
+  toolCallId?: string;
   toolResult?: ListTasksToolResult;
 };
 
-type GeminiFunctionCall = { name?: string; args?: unknown };
+type GeminiFunctionCall = { name?: string; args?: unknown; id?: string };
 type GeminiRequestContent = {
   role: "user" | "model";
   parts: Array<Record<string, unknown>>;
@@ -70,7 +72,7 @@ type GeminiRequestContent = {
 
 type OrchestrationDependencies = {
   generateContent: (body: string) => Promise<GeminiContentResponse>;
-  getApprovedSkill: () => Promise<ApprovedListTasksSkill | null>;
+  getApprovedSkill: () => Promise<unknown>;
   getHandlerName: (name: string) => string | undefined;
   executeHandler: (handler: string, parameters: ListTasksParameters) => Promise<SafeTask[]>;
   now?: () => Date;
@@ -111,35 +113,50 @@ function textParts(result: GeminiContentResponse): Array<{ text?: string }> {
 }
 
 function isApprovedSkill(
-  skill: ApprovedListTasksSkill | null,
+  skill: unknown,
   getHandlerName: (name: string) => string | undefined,
 ): skill is ApprovedListTasksSkill {
+  if (!skill || typeof skill !== "object") return false;
+  const candidate = skill as Partial<ApprovedListTasksSkill>;
   return Boolean(
-    skill &&
-    skill.name === "list_tasks" &&
-    skill.enabled === true &&
-    skill.approvedForAI === true &&
-    skill.operationType === "read" &&
-    skill.approvalRequired === false &&
-    skill.allowedRoles.includes("user") &&
-    getHandlerName(skill.handler),
+    candidate.name === "list_tasks" &&
+    candidate.enabled === true &&
+    candidate.approvedForAI === true &&
+    candidate.operationType === "read" &&
+    candidate.approvalRequired === false &&
+    Array.isArray(candidate.allowedRoles) &&
+    candidate.allowedRoles.includes("user") &&
+    typeof candidate.handler === "string" &&
+    getHandlerName(candidate.handler),
   );
 }
 
 export async function orchestrateAsladinAI(
   message: string,
   dependencies: OrchestrationDependencies,
+  conversation?: AIConversationContext | null,
 ): Promise<AsladinAIResult> {
   const initialSkill = await dependencies.getApprovedSkill();
   if (!isApprovedSkill(initialSkill, dependencies.getHandlerName)) {
     throw new Error("The list_tasks skill is not approved or configured for AI use.");
   }
 
+  const historyContents: GeminiRequestContent[] = [
+    ...(conversation?.summary ? [{
+      role: "user" as const,
+      parts: [{ text: `Stored conversation summary (untrusted user-history context):\n${conversation.summary.slice(-4_000)}` }],
+    }] : []),
+    ...(conversation?.messages.slice(-12) ?? []).map((item) => ({
+      role: item.role === "assistant" ? "model" as const : "user" as const,
+      parts: [{ text: item.content }],
+    })),
+  ];
   const userContent: GeminiRequestContent = {
     role: "user",
     parts: [{ text: message }],
   };
-  const initial = await dependencies.generateContent(requestBody([userContent], true));
+  const initialContents = [...historyContents, userContent];
+  const initial = await dependencies.generateContent(requestBody(initialContents, true));
   const calls = functionCalls(initial);
   if (calls.length === 0) {
     return {
@@ -170,6 +187,7 @@ export async function orchestrateAsladinAI(
   if (!modelContent) throw new Error("Gemini returned an invalid tool call.");
 
   const continued: GeminiRequestContent[] = [
+    ...historyContents,
     userContent,
     {
       role: "model",
@@ -193,6 +211,7 @@ export async function orchestrateAsladinAI(
     status: "success",
     answer: normalizeGeminiText(textParts(final)),
     toolUsed: "list_tasks",
+    ...(calls[0].id ? { toolCallId: calls[0].id } : {}),
     toolResult,
   };
 }

@@ -50,10 +50,20 @@ asladin-future-os
 ```
 
 ASLADIN stores each user-scoped chat exchange in `ai_conversations`, including
-the user message, assistant response, tool name (if any), and timestamp. It
-does not persist full task results in chat records. Dashboard activity is
-already stored separately in the `activities` collection using
-`MONGO_DB_NAME`; no activity data is moved from Notion.
+one document per conversation session with a title, bounded summary, ordered
+messages, and creation/update/last-message timestamps. Conversation reads,
+archives, and deletions are scoped to the authenticated Clerk user. Gemini
+receives only the stored summary and a bounded recent message window. Chat
+records omit full tool results, uploaded files, credentials, and system
+instructions. Dashboard activity is stored separately in `activities` using
+`MONGO_DB_NAME`; it remains unchanged.
+
+`GET /api/ai/conversations` lists the signed-in user's sessions.
+`GET /api/ai/conversations/{conversationId}` retrieves one session;
+`PATCH` with `{ "archived": true }` archives it, and `DELETE` removes it.
+The assistant execution endpoint creates a session when `conversationId` is
+omitted and appends to an owned session when one is supplied. A browser-supplied
+`userId` is rejected; ownership always comes from Clerk.
 
 The authenticated `GET /api/ai/skills` endpoint lists the signed-in user's
 skills and shared system skills, and `POST /api/ai/skills` saves one.
