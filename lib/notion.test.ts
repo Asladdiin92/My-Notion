@@ -68,6 +68,40 @@ function page(properties: Record<string, unknown>) {
 
 test.afterEach(() => {
   globalThis.fetch = originalFetch;
+  notion.invalidateNotionTasksCache();
+});
+
+test("caches task reads briefly and invalidates after a successful task write", async () => {
+  notion.invalidateNotionTasksCache();
+  let taskQueries = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    if (url.endsWith("/databases/notion-test-database") && (!init.method || init.method === "GET")) {
+      return Response.json(database);
+    }
+    if (url.endsWith("/databases/notion-test-database/query")) {
+      taskQueries += 1;
+      return Response.json({ results: [], has_more: false, next_cursor: null });
+    }
+    return Response.json(page({
+      Item: { type: "title", title: [{ plain_text: "New task" }] },
+      Status: { type: "status", status: { name: "Planned" } },
+    }));
+  };
+
+  const [first, concurrent] = await Promise.all([
+    notion.fetchNotionTasks(),
+    notion.fetchNotionTasks(),
+  ]);
+  assert.deepEqual(first, []);
+  assert.deepEqual(concurrent, []);
+  first.length = 0;
+  assert.deepEqual(await notion.fetchNotionTasks(), []);
+  assert.equal(taskQueries, 1);
+
+  await notion.createNotionTask({ title: "New task" });
+  await notion.fetchNotionTasks();
+  assert.equal(taskQueries, 2);
 });
 
 test("creates a task using schema-aware defaults when fields are omitted", async () => {

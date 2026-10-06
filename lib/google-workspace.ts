@@ -13,6 +13,7 @@ const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/drive",
 ];
+const GOOGLE_REQUEST_TIMEOUT_MS = 15_000;
 
 type OAuthState = { userId: string; nonce: string; expiresAt: number };
 type GoogleSession = { userId: string; email: string; accessToken: string; expiresAt: number };
@@ -21,6 +22,13 @@ type GmailPart = {
   body?: { data?: string };
   parts?: GmailPart[];
 };
+
+function googleFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, {
+    ...init,
+    signal: AbortSignal.timeout(GOOGLE_REQUEST_TIMEOUT_MS),
+  });
+}
 
 function sessionSecret(): string {
   const secret = process.env.SESSION_SECRET;
@@ -114,7 +122,7 @@ export function googleAuthorizationUrl(state: string, requestUrl: string): strin
 
 export async function exchangeGoogleCode(code: string, requestUrl: string, userId: string): Promise<GoogleSession> {
   const { clientId, clientSecret } = clientCredentials();
-  const response = await fetch("https://oauth2.googleapis.com/token", {
+  const response = await googleFetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -131,7 +139,7 @@ export async function exchangeGoogleCode(code: string, requestUrl: string, userI
     throw new Error("Google could not complete authorization. Check the OAuth client and callback URL.");
   }
 
-  const profileResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+  const profileResponse = await googleFetch("https://www.googleapis.com/oauth2/v2/userinfo", {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
     cache: "no-store",
   });
@@ -178,7 +186,7 @@ export function readGoogleSession(request: NextRequest, userId: string): GoogleS
 }
 
 export async function revokeGoogleAccess(session: GoogleSession): Promise<void> {
-  const response = await fetch("https://oauth2.googleapis.com/revoke", {
+  const response = await googleFetch("https://oauth2.googleapis.com/revoke", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ token: session.accessToken }),
@@ -190,7 +198,7 @@ export async function revokeGoogleAccess(session: GoogleSession): Promise<void> 
 }
 
 async function googleGet<T>(token: string, url: URL): Promise<T> {
-  const response = await fetch(url, {
+  const response = await googleFetch(url, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });

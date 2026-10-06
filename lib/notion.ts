@@ -2,6 +2,7 @@ import type { Task } from "@/lib/types";
 
 const NOTION_VERSION = "2022-06-28";
 const NOTION_API = "https://api.notion.com/v1";
+const TASK_CACHE_TTL_MS = 10_000;
 
 type NotionValue = {
   type?: string;
@@ -49,6 +50,11 @@ type NotionPropertySchema = {
 type NotionDatabase = {
   properties: Record<string, NotionPropertySchema>;
 };
+
+type TaskCacheEntry = { tasks: Task[]; expiresAt: number };
+let taskCache: TaskCacheEntry | undefined;
+let taskFetchInFlight: Promise<Task[]> | undefined;
+let taskCacheVersion = 0;
 
 export type CreateTaskInput = {
   title: string;
@@ -477,6 +483,7 @@ export async function createNotionTask(input: CreateTaskInput): Promise<Task> {
   });
   if (!response.ok) throw await notionError(response);
   const page = await response.json() as NotionPage;
+  invalidateNotionTasksCache();
   return toTask(page);
 }
 
@@ -496,6 +503,7 @@ export async function updateNotionTask(pageId: string, input: CreateTaskInput): 
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw await notionError(response);
+  invalidateNotionTasksCache();
   return toTask(await response.json() as NotionPage);
 }
 
@@ -528,6 +536,7 @@ export async function setNotionTaskCompleted(pageId: string, completed: boolean)
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw await notionError(response);
+  invalidateNotionTasksCache();
   return toTask(await response.json() as NotionPage);
 }
 
@@ -543,6 +552,7 @@ export async function archiveNotionTask(pageId: string): Promise<void> {
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw await notionError(response);
+  invalidateNotionTasksCache();
 }
 
 function validateInputLengths(input: CreateTaskInput): void {
@@ -640,7 +650,7 @@ function toTask(page: NotionPage): Task {
   };
 }
 
-export async function fetchNotionTasks(): Promise<Task[]> {
+async function fetchNotionTasksUncached(): Promise<Task[]> {
   const token = notionToken();
   const databaseId = notionDatabaseId();
 
@@ -667,4 +677,30 @@ export async function fetchNotionTasks(): Promise<Task[]> {
   }
 
   throw new Error("The database has more than 2,000 entries. Add a database filter or narrow the dashboard query.");
+}
+
+export function invalidateNotionTasksCache(): void {
+  taskCacheVersion += 1;
+  taskCache = undefined;
+  taskFetchInFlight = undefined;
+}
+
+export async function fetchNotionTasks(): Promise<Task[]> {
+  const now = Date.now();
+  if (taskCache && taskCache.expiresAt > now) return structuredClone(taskCache.tasks);
+  if (taskFetchInFlight) return taskFetchInFlight.then((tasks) => structuredClone(tasks));
+
+  const cacheVersion = taskCacheVersion;
+  const request = fetchNotionTasksUncached()
+    .then((tasks) => {
+      if (cacheVersion === taskCacheVersion) {
+        taskCache = { tasks, expiresAt: Date.now() + TASK_CACHE_TTL_MS };
+      }
+      return tasks;
+    })
+    .finally(() => {
+      if (taskFetchInFlight === request) taskFetchInFlight = undefined;
+    });
+  taskFetchInFlight = request;
+  return request.then((tasks) => structuredClone(tasks));
 }

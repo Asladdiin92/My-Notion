@@ -35,8 +35,8 @@ Create a least-privilege Atlas database user and allow the app's deployment
 network in Atlas Network Access. Grant that user read/write access to each
 database the app uses.
 
-The planned AI data model uses these collections, created by MongoDB as each
-feature first inserts data:
+The AI data model uses these collections, created by MongoDB as each feature
+first inserts data:
 
 ```text
 asladin-future-os
@@ -45,16 +45,22 @@ asladin-future-os
 ├── ai_feedback
 ├── ai_action_proposals
 ├── ai_action_logs
-└── ai_memories
+├── ai_memories
+└── ai_conversations
 ```
+
+ASLADIN stores each user-scoped chat exchange in `ai_conversations`, including
+the user message, assistant response, tool name (if any), and timestamp. It
+does not persist full task results in chat records. Dashboard activity is
+already stored separately in the `activities` collection using
+`MONGO_DB_NAME`; no activity data is moved from Notion.
 
 The authenticated `GET /api/ai/skills` endpoint lists the signed-in user's
 skills and shared system skills, and `POST /api/ai/skills` saves one.
 MongoDB creates `ai_skills` on the first successful insert. The initial
 `list_tasks` system skill is a read-only handler definition; task retrieval
 must still use the authenticated user's identity and existing access checks.
-The other collections are planned for later features and are not created
-until needed.
+The remaining AI collections are created only when their features are added.
 
 Ask ASLADIN to use the task-list skill with an authenticated same-origin
 request to `/api/ai/skills/execute`:

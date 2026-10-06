@@ -56,7 +56,7 @@ export type ListTasksToolResult = {
 };
 
 export type AsladinAIResult = {
-  status: "success";
+  status: "success" | "fallback";
   answer: string;
   toolUsed: "list_tasks" | null;
   toolResult?: ListTasksToolResult;

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { hasPlannerUserAccess } from "@/lib/access";
 import { orchestrateAsladinAI, type ApprovedListTasksSkill } from "@/lib/asladin-ai";
 import { getSystemAISkill } from "@/lib/ai-skills";
+import { recordAIConversation } from "@/lib/ai-conversations";
 import { executeSkillHandler, getSkillHandler } from "@/lib/ai-skill-handlers";
 import { generateGeminiContent } from "@/lib/gemini";
 import { isSameOrigin } from "@/lib/task-request";
@@ -12,6 +13,21 @@ export const runtime = "nodejs";
 
 const MAX_REQUEST_BYTES = 8 * 1024;
 const MAX_MESSAGE_LENGTH = 2000;
+
+class GeminiUnavailableError extends Error {
+  constructor() {
+    super("Gemini is unavailable.");
+    this.name = "GeminiUnavailableError";
+  }
+}
+
+async function generateAsladinContent(body: string) {
+  try {
+    return await generateGeminiContent(body);
+  } catch {
+    throw new GeminiUnavailableError();
+  }
+}
 
 function parseMessage(input: unknown): string {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -122,13 +138,40 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await orchestrateAsladinAI(message, {
-      generateContent: generateGeminiContent,
-      getApprovedSkill: getApprovedListTasksSkill,
-      getHandlerName: (name) => getSkillHandler(name) ? name : undefined,
-      executeHandler: executeSkillHandler,
-    });
-    return NextResponse.json(result, {
+    let result;
+    try {
+      result = await orchestrateAsladinAI(message, {
+        generateContent: generateAsladinContent,
+        getApprovedSkill: getApprovedListTasksSkill,
+        getHandlerName: (name) => getSkillHandler(name) ? name : undefined,
+        executeHandler: executeSkillHandler,
+      });
+    } catch (error) {
+      if (!(error instanceof GeminiUnavailableError)) throw error;
+      result = {
+        status: "fallback" as const,
+        answer: "Gemini is unavailable right now. Please try again shortly.",
+        toolUsed: null,
+      };
+    }
+
+    let conversationId: string;
+    try {
+      conversationId = await recordAIConversation(userId, {
+        message,
+        answer: result.answer,
+        toolUsed: result.toolUsed,
+      });
+    } catch (error) {
+      console.error("ASLADIN AI conversation persistence failed.", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+      return NextResponse.json({ error: "ASLADIN AI conversation could not be saved." }, {
+        status: 503,
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
+    return NextResponse.json({ ...result, conversationId }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

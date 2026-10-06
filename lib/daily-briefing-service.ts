@@ -10,7 +10,7 @@ import { generateDailyBriefingText } from "@/lib/gemini";
 import { getFocusMinutesToday } from "@/lib/focus-sessions";
 import { fetchNotionTasks } from "@/lib/notion";
 
-const CACHE_TTL_MS = 3 * 60_000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const REGENERATE_INTERVAL_MS = 60_000;
 
 type CacheEntry = { briefing: DailyBriefing; expiresAt: number };
@@ -68,10 +68,12 @@ export async function getDailyBriefing(
   if (activeRequest) return activeRequest;
 
   const request = (async () => {
-    const tasks = await fetchNotionTasks();
-    const [activitiesResult, focusResult] = await Promise.allSettled([
-      listActivities(userId, 10),
-      getFocusMinutesToday(userId, timeZone, now),
+    const [tasks, [activitiesResult, focusResult]] = await Promise.all([
+      fetchNotionTasks(),
+      Promise.allSettled([
+        listActivities(userId, 10),
+        getFocusMinutesToday(userId, timeZone, now),
+      ]),
     ]);
     const warnings: string[] = [];
     const recentActivityTypes = activitiesResult.status === "fulfilled"
