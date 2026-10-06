@@ -142,14 +142,14 @@ export function MetricsGrid({
     <>
       <section className="metrics-grid" aria-label="Today’s dashboard metrics">
         <MetricCard
-          label="Tasks Due Today"
+          label="Due Today"
           value={tasksError ? "—" : taskMetrics.tasksDueToday}
           note={tasksError ? "Notion data unavailable" : `In ${deviceTimeZone}`}
           icon={ListChecks}
           tone="tone-green"
         />
         <MetricCard
-          label="Active Projects"
+          label="Projects"
           value={tasksError ? "—" : taskMetrics.activeProjects}
           note={tasksError ? "Notion data unavailable" : "Areas with unfinished work"}
           icon={BriefcaseBusiness}
@@ -163,7 +163,7 @@ export function MetricsGrid({
           tone="tone-amber"
         />
         <MetricCard
-          label="Focus Time Today"
+          label="Focus"
           value={focusDisplay}
           note={focusError ? "Focus data unavailable" : focusMinutes === 0 ? "No recorded focus yet" : `In ${deviceTimeZone}`}
           icon={Clock3}

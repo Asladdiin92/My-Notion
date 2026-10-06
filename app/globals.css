@@ -1226,3 +1226,68 @@ body::before { position: fixed; z-index: -1; inset: 0; background: radial-gradie
   .provider-approval p { grid-column: 1 / -1; }
   .provider-branch-fields { grid-template-columns: 1fr; }
 }
+
+.command-center-banner {
+  min-height: 0;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 19px 22px;
+}
+.command-center-copy h1 { margin: 0 0 5px; font-size: clamp(19px, 2vw, 25px); letter-spacing: -.02em; }
+.command-center-copy p { font-size: 10px; }
+.command-center-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; }
+.command-center-date { display: inline-flex; align-items: center; gap: 6px; margin-right: 5px; color: #9ab7a8; font: 9px var(--font-mono); white-space: nowrap; }
+.command-center-date svg { color: #62e7ad; }
+.home-action-button { display: inline-flex; min-height: 32px; align-items: center; justify-content: center; gap: 6px; padding: 0 9px; border: 1px solid #4be3ae35; border-radius: 8px; background: #0b1b17; color: #b6dac9; cursor: pointer; font: 9px var(--font-mono); transition: background .16s ease, border-color .16s ease, transform .16s ease; }
+.home-action-button:hover:not(:disabled) { transform: translateY(-1px); border-color: #44edb1; background: #103126; }
+.home-action-button:disabled { cursor: not-allowed; opacity: .52; }
+.home-action-primary { border-color: #37dfa052; background: linear-gradient(110deg, #087b57, #096c70); color: #effff7; }
+.home-action-primary:hover:not(:disabled) { background: linear-gradient(110deg, #0a9d6d, #078b91); }
+.metrics-grid { gap: 11px; margin-bottom: 16px; }
+.metric-card { min-height: 100px; padding: 12px 14px; }
+.metric-icon { width: 27px; height: 27px; }
+.metric-value-row { margin-top: 4px; }
+.metric-value { font-size: 25px; }
+.metric-note { margin-top: 3px; }
+.daily-focus-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); align-items: stretch; gap: 14px; margin-bottom: 16px; }
+.daily-focus-grid > .daily-briefing-panel, .daily-focus-grid > .my-day-panel { height: 100%; margin: 0; }
+.daily-briefing-panel { padding: 15px 17px; }
+.daily-briefing-counts { margin: 10px 0 8px; }
+.daily-briefing-loading, .daily-briefing-empty { min-height: 42px; }
+.daily-briefing-action { padding: 10px 11px; }
+.my-day-panel { padding: 15px 17px; }
+.my-day-item { min-height: 45px; }
+.dashboard-insights-grid { margin-top: 0; margin-bottom: 17px; }
+.activity-panel, .recommendations-panel { padding: 15px 17px; }
+.activity-list, .recommendation-list { margin-top: 10px; }
+.integration-compact { margin: 0 0 22px; border: 1px solid #55d9aa2b; border-radius: 12px; background: #0b1715a8; box-shadow: inset 0 1px #eafff707; }
+.integration-compact > summary { display: flex; min-height: 50px; align-items: center; gap: 12px; padding: 0 15px; color: #d5f2e5; cursor: pointer; list-style: none; }
+.integration-compact > summary::-webkit-details-marker { display: none; }
+.integration-summary-title { font: 600 10px var(--font-mono); }
+.integration-summary-status { flex: 1; color: #82a092; font: 8px var(--font-mono); }
+.integration-summary-toggle { color: #55e7ad; font: 8px var(--font-mono); }
+.integration-compact[open] > summary { border-bottom: 1px solid #55d9aa1c; }
+.integration-compact .google-workspace-panel { margin: 12px 12px 0; padding: 14px; }
+.integration-compact .provider-integrations-grid { margin: 12px; }
+.integration-compact .provider-integrations-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+@media (max-width: 950px) {
+  .daily-focus-grid { grid-template-columns: minmax(0, 1fr); }
+  .integration-compact .provider-integrations-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 700px) {
+  .command-center-banner { align-items: flex-start; flex-direction: column; gap: 13px; padding: 16px; }
+  .command-center-actions { justify-content: flex-start; }
+  .command-center-date { width: 100%; }
+}
+
+@media (max-width: 450px) {
+  .command-center-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .command-center-date { grid-column: 1 / -1; }
+  .home-action-button { padding-inline: 6px; font-size: 8px; }
+  .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .metric-card { min-height: 92px; padding: 10px; }
+  .daily-focus-grid { gap: 10px; }
+  .integration-summary-status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}

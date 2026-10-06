@@ -1002,7 +1002,6 @@ export default function DashboardPage() {
           <div className="breadcrumbs"><span>ASLADIN</span><span>/</span><strong>{activeTabLabel}</strong></div>
           <div className="topbar-right">
             <span className="updated-label">{lastUpdated ? `Updated at ${lastUpdated}` : "Live from Notion"}</span>
-            <button className={`refresh-button${state === "loading" ? " refreshing" : ""}`} onClick={() => void loadTasks(true)} disabled={state === "loading"} aria-label="Refresh tasks"><RefreshCw size={14} /> <span>Refresh</span></button>
             <span className={`connection-label ${state === "ready" ? "connected" : state === "error" ? "disconnected" : ""}`}><i />{state === "ready" ? "Connected" : state === "error" ? "Not connected" : "Connecting"}</span>
             <UserButton />
           </div>
@@ -1011,76 +1010,26 @@ export default function DashboardPage() {
         <div className="page-wrap">
           <div className={`tab-content${activeTab === "overview" ? " is-active" : ""}`} id="overview-tab" role="tabpanel" aria-labelledby="nav-overview" aria-hidden={activeTab !== "overview"}>
           <section className="welcome-row command-center-banner">
-            <div><div className="date-line"><CalendarDays size={13} />{greeting}</div><h1>ASLADIN AI COMMAND CENTER</h1><p>Your workspace for tasks, projects, and a more focused day.</p></div>
-            <a className="open-notion-button" href="https://www.notion.so" target="_blank" rel="noreferrer">Open Notion <ExternalLink size={13} /></a>
-          </section>
-
-          <section className="panel my-day-panel" id="my-day" aria-labelledby="my-day-title">
-            <div className="panel-heading">
-              <div><h2 id="my-day-title">My Day</h2><p>Today&apos;s deadlines, overdue work, and daily routines</p></div>
-              <span className="chart-heading-icon tone-amber"><CalendarDays size={15} /></span>
+            <div className="command-center-copy">
+              <h1>Good morning, {user?.firstName || "Asladin"}</h1>
+              <p>Here is what needs your attention today.</p>
             </div>
-            {myDayTasks.length > 0 ? (
-              <div className="my-day-list">
-                {myDayTasks.map((task) => (
-                  <article className={`my-day-item${task.completed ? " completed" : ""}`} key={task.id}>
-                    <button type="button" aria-label={`Mark ${task.title} ${task.completed ? "not complete" : "complete"}`}
-                      onClick={() => void handleTaskComplete(task)} disabled={state !== "ready" || completingTaskId === task.id}>
-                      {completingTaskId === task.id ? <LoaderCircle size={14} className="spin" /> : <CheckCheck size={14} />}
-                    </button>
-                    <a className="my-day-title" href={task.url} target="_blank" rel="noreferrer">
-                      <strong>{task.title}</strong><span>{[task.courseCode, task.course, task.nextAction].filter(Boolean).join(" · ")}</span>
-                    </a>
-                    <span className={`my-day-priority priority-${task.priority.toLowerCase()}`}>{task.priority}</span>
-                    <button className="my-day-edit" type="button" onClick={() => { setCreateDialogOpen(false); setEditingTask(task); }}>Edit</button>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="my-day-empty">{state === "ready" ? "No overdue, due-today, or daily recurring items. You’re clear for today." : "Connect to Notion to see today's focus."}</p>
-            )}
-            <div className="my-day-footer">
-              <span>{myDayTaskCount} focus item{myDayTaskCount === 1 ? "" : "s"}{myDayTaskCount > myDayTasks.length ? ` · showing top ${myDayTasks.length}` : ""}{tasks.some((task) => isOverdue(task, today)) ? ` · ${tasks.filter((task) => isOverdue(task, today)).length} overdue` : ""}</span>
-              <button type="button" disabled={state !== "ready"} onClick={() => {
-                setRequestDayPlan(true);
-                selectTab("planner-assistant");
-                window.setTimeout(() => document.getElementById("planner-assistant")?.scrollIntoView({ behavior: "smooth" }), 0);
-              }}>Plan my day with AI <Sparkles size={12} /></button>
+            <div className="command-center-actions">
+              <time className="command-center-date"><CalendarDays size={13} />{greeting}</time>
+              <button type="button" className="home-action-button home-action-primary" onClick={() => { setEditingTask(null); setCreateDialogOpen(true); }} disabled={!taskOptions}>
+                <Plus size={14} /> New Task
+              </button>
+              <button type="button" className="home-action-button" onClick={() => selectTab("planner-assistant")}>
+                <Sparkles size={14} /> Ask AI
+              </button>
+              <button type="button" className="home-action-button" disabled title="Focus timer is not available yet">
+                <Clock3 size={14} /> Start Focus
+              </button>
+              <button type="button" className="home-action-button" onClick={() => void loadTasks(true)} disabled={state === "loading"}>
+                <RefreshCw size={14} className={state === "loading" ? "spin" : ""} /> Refresh
+              </button>
             </div>
           </section>
-
-          <NextBestActionPanel
-            disabled={state !== "ready"}
-            refreshKey={dashboardRefreshKey}
-            onComplete={async (taskId) => {
-              const task = tasks.find((item) => item.id === taskId);
-              if (task) await handleTaskComplete(task);
-            }}
-          />
-          <DailyBriefingPanel refreshKey={dashboardRefreshKey} />
-
-          <section className="panel google-workspace-panel" aria-labelledby="google-workspace-title">
-            <div className="panel-heading google-workspace-heading">
-              <div><h2 id="google-workspace-title">Google Workspace</h2><p>{googleSummary.connected ? `Connected as ${googleSummary.email}` : "Connect Gmail, Calendar, and Drive for an on-demand AI briefing."}</p></div>
-              <div className="google-workspace-actions">
-                {googleSummary.connected
-                  ? <button type="button" className="refresh-button" onClick={() => void loadGoogleSummary(true)} disabled={googleLoading}>{googleLoading ? "Refreshing..." : "Refresh"}</button>
-                  : <a className="google-connect-button" href="/api/google/connect">Connect Google</a>}
-                {googleSummary.connected && <button type="button" className="google-disconnect-button" onClick={() => void handleGoogleDisconnect()}>Disconnect</button>}
-              </div>
-            </div>
-            {googleError && <p className="google-workspace-error" role="alert">{googleError}</p>}
-            {googleSummary.connected && <>
-              <div className="google-workspace-counts"><span><strong>{googleSummary.unreadEmails}</strong> unread emails</span><span><strong>{meetingsToday}</strong> meetings today</span><span><strong>{googleSummary.files.length}</strong> recent Drive files</span></div>
-              <div className="google-workspace-data">
-                <div><h3>Unread email</h3>{googleSummary.messages.slice(0, 3).map((message) => <article key={message.id}><strong>{message.subject}</strong><span>{message.from}</span><p>{message.snippet}</p></article>)}{googleSummary.messages.length === 0 && <p className="google-workspace-empty">No unread messages found.</p>}</div>
-                <div><h3>Upcoming calendar</h3>{googleSummary.events.slice(0, 4).map((event) => <a key={event.id} href={event.link || "#calendar"} target={event.link ? "_blank" : undefined} rel={event.link ? "noreferrer" : undefined}><time>{event.start ? formatDate(event.start) : "Scheduled"}</time><strong>{event.title}</strong></a>)}{googleSummary.events.length === 0 && <p className="google-workspace-empty">No upcoming events this week.</p>}</div>
-                <div><h3>Recent Drive files</h3>{googleSummary.files.slice(0, 4).map((file) => <a key={file.id} href={file.link || "#"} target={file.link ? "_blank" : undefined} rel={file.link ? "noreferrer" : undefined}><BookOpen size={13} /><span>{file.name}</span></a>)}{googleSummary.files.length === 0 && <p className="google-workspace-empty">No recent files found.</p>}</div>
-              </div>
-            </>}
-          </section>
-
-          <ProviderIntegrations />
 
           {state === "error" && <div className="connection-banner"><span className="banner-icon"><AlertTriangle size={16} /></span><div><strong>We couldn’t load your Notion tasks</strong><p>{error}</p></div><button onClick={() => void loadTasks()}>Try again</button></div>}
           {state === "loading" && tasks.length === 0 && <div className="loading-banner"><LoaderCircle size={15} className="spin" /> Connecting securely to your Notion database...</div>}
@@ -1095,6 +1044,52 @@ export default function DashboardPage() {
             timeZone={PLANNER_TIME_ZONE}
           />
 
+          <section className="daily-focus-grid" aria-label="Daily briefing and focused tasks">
+            <DailyBriefingPanel refreshKey={dashboardRefreshKey} />
+            <section className="panel my-day-panel" id="my-day" aria-labelledby="my-day-title">
+              <div className="panel-heading">
+                <div><h2 id="my-day-title">My Day</h2><p>Today&apos;s deadlines, overdue work, and daily routines</p></div>
+                <span className="chart-heading-icon tone-amber"><CalendarDays size={15} /></span>
+              </div>
+              {myDayTasks.length > 0 ? (
+                <div className="my-day-list">
+                  {myDayTasks.map((task) => (
+                    <article className={`my-day-item${task.completed ? " completed" : ""}`} key={task.id}>
+                      <button type="button" aria-label={`Mark ${task.title} ${task.completed ? "not complete" : "complete"}`}
+                        onClick={() => void handleTaskComplete(task)} disabled={state !== "ready" || completingTaskId === task.id}>
+                        {completingTaskId === task.id ? <LoaderCircle size={14} className="spin" /> : <CheckCheck size={14} />}
+                      </button>
+                      <a className="my-day-title" href={task.url} target="_blank" rel="noreferrer">
+                        <strong>{task.title}</strong><span>{[task.courseCode, task.course, task.nextAction].filter(Boolean).join(" · ")}</span>
+                      </a>
+                      <span className={`my-day-priority priority-${task.priority.toLowerCase()}`}>{task.priority}</span>
+                      <button className="my-day-edit" type="button" onClick={() => { setCreateDialogOpen(false); setEditingTask(task); }}>Edit</button>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="my-day-empty">{state === "ready" ? "No overdue, due-today, or daily recurring items. You’re clear for today." : "Connect to Notion to see today's focus."}</p>
+              )}
+              <div className="my-day-footer">
+                <span>{myDayTaskCount} focus item{myDayTaskCount === 1 ? "" : "s"}{myDayTaskCount > myDayTasks.length ? ` · showing top ${myDayTasks.length}` : ""}{tasks.some((task) => isOverdue(task, today)) ? ` · ${tasks.filter((task) => isOverdue(task, today)).length} overdue` : ""}</span>
+                <button type="button" disabled={state !== "ready"} onClick={() => {
+                  setRequestDayPlan(true);
+                  selectTab("planner-assistant");
+                  window.setTimeout(() => document.getElementById("planner-assistant")?.scrollIntoView({ behavior: "smooth" }), 0);
+                }}>Plan my day with AI <Sparkles size={12} /></button>
+              </div>
+            </section>
+          </section>
+
+          <NextBestActionPanel
+            disabled={state !== "ready"}
+            refreshKey={dashboardRefreshKey}
+            onComplete={async (taskId) => {
+              const task = tasks.find((item) => item.id === taskId);
+              if (task) await handleTaskComplete(task);
+            }}
+          />
+
           <section className="dashboard-insights-grid" aria-label="Recent activity and AI recommendations">
             <RecentActivityTimeline
               refreshKey={`${dashboardRefreshKey}:${activityRefreshKey}`}
@@ -1107,6 +1102,35 @@ export default function DashboardPage() {
               onNotify={notify}
             />
           </section>
+
+          <details className="integration-compact">
+            <summary>
+              <span className="integration-summary-title">Integrations</span>
+              <span className="integration-summary-status">{googleSummary.connected ? "Google connected" : "Google not connected"} · GitHub · Telegram</span>
+              <span className="integration-summary-toggle">Manage</span>
+            </summary>
+            <section className="panel google-workspace-panel" aria-labelledby="google-workspace-title">
+              <div className="panel-heading google-workspace-heading">
+                <div><h2 id="google-workspace-title">Google Workspace</h2><p>{googleSummary.connected ? `Connected as ${googleSummary.email}` : "Connect Gmail, Calendar, and Drive for an on-demand AI briefing."}</p></div>
+                <div className="google-workspace-actions">
+                  {googleSummary.connected
+                    ? <button type="button" className="refresh-button" onClick={() => void loadGoogleSummary(true)} disabled={googleLoading}>{googleLoading ? "Refreshing..." : "Refresh"}</button>
+                    : <a className="google-connect-button" href="/api/google/connect">Connect Google</a>}
+                  {googleSummary.connected && <button type="button" className="google-disconnect-button" onClick={() => void handleGoogleDisconnect()}>Disconnect</button>}
+                </div>
+              </div>
+              {googleError && <p className="google-workspace-error" role="alert">{googleError}</p>}
+              {googleSummary.connected && <>
+                <div className="google-workspace-counts"><span><strong>{googleSummary.unreadEmails}</strong> unread emails</span><span><strong>{meetingsToday}</strong> meetings today</span><span><strong>{googleSummary.files.length}</strong> recent Drive files</span></div>
+                <div className="google-workspace-data">
+                  <div><h3>Unread email</h3>{googleSummary.messages.slice(0, 3).map((message) => <article key={message.id}><strong>{message.subject}</strong><span>{message.from}</span><p>{message.snippet}</p></article>)}{googleSummary.messages.length === 0 && <p className="google-workspace-empty">No unread messages found.</p>}</div>
+                  <div><h3>Upcoming calendar</h3>{googleSummary.events.slice(0, 4).map((event) => <a key={event.id} href={event.link || "#calendar"} target={event.link ? "_blank" : undefined} rel={event.link ? "noreferrer" : undefined}><time>{event.start ? formatDate(event.start) : "Scheduled"}</time><strong>{event.title}</strong></a>)}{googleSummary.events.length === 0 && <p className="google-workspace-empty">No upcoming events this week.</p>}</div>
+                  <div><h3>Recent Drive files</h3>{googleSummary.files.slice(0, 4).map((file) => <a key={file.id} href={file.link || "#"} target={file.link ? "_blank" : undefined} rel={file.link ? "noreferrer" : undefined}><BookOpen size={13} /><span>{file.name}</span></a>)}{googleSummary.files.length === 0 && <p className="google-workspace-empty">No recent files found.</p>}</div>
+                </div>
+              </>}
+            </section>
+            <ProviderIntegrations />
+          </details>
           </div>
 
           <div className={`tab-content${activeTab === "progress" ? " is-active" : ""}`} id="progress-tab" role="tabpanel" aria-labelledby="nav-progress" aria-hidden={activeTab !== "progress"}>
